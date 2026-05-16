@@ -498,10 +498,10 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 
 ### Task 15: Documentation + plan archive
 
-- [ ] write provider-authoring doc inside README ("Adding a new provider" section, ~30 lines with TikTok skeleton)
-- [ ] document risks (Risks section below) in README
-- [ ] create `CLAUDE.md` capturing: codebase conventions, how to run locally, where IG cookies go, provider testing pattern
-- [ ] move this plan to `docs/plans/completed/20260516-yoink-telegram-media-bot.md`
+- [x] write provider-authoring doc inside README ("Adding a new provider" section, ~30 lines with TikTok skeleton)
+- [x] document risks (Risks section below) in README
+- [x] create `CLAUDE.md` capturing: codebase conventions, how to run locally, where IG cookies go, provider testing pattern
+- [x] move this plan to `docs/plans/completed/20260516-yoink-telegram-media-bot.md`
 
 ## Risks & Edge Cases
 

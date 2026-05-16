@@ -103,12 +103,35 @@ Drop a test under `tests/unit/test_tiktok_provider.py` mocking
 
 ## Risks & known gaps
 
-- Instagram aggressively rate-limits scrapers; supply a logged-in cookie
-  file via `YOINK_IG_COOKIES_FILE` for stories and age-gated posts.
-- The 50 MB ceiling is a Telegram bot API hard limit. A local Bot API
-  server raises it to 2 GB (post-MVP).
-- SSRF protection validates the initial URL only; redirects that occur
-  inside `gallery-dl` / `yt-dlp` are not intercepted. Enable
-  `YOINK_ALLOWLIST_MODE=true` for stricter containment.
-- The job queue lives in-process: if the container is killed mid-fetch,
-  the affected link is dropped (no persistent queue in MVP).
+- **IG anti-scraping.** Instagram aggressively rate-limits scrapers and
+  gates posts behind login. Supply a logged-in cookie file via
+  `YOINK_IG_COOKIES_FILE` for stories and age-gated content. Keep
+  `gallery-dl` / `yt-dlp` current — both ship frequent fixes.
+- **TG 50 MB upload cap.** Hard limit of the public Bot API. `YOINK_MAX_FILE_MB`
+  enforces it pre-flight; oversized files are skipped. A local Bot API
+  server raises the ceiling to 2 GB (post-MVP).
+- **Source-side rate limiting.** Providers raise `ProviderTransientError`
+  on 429-style failures; the pipeline retries with backoff (1s, 4s).
+  Permanent errors (404, geo-block) are not retried.
+- **Extractor drift.** `gallery-dl` and `yt-dlp` track moving targets.
+  Pin versions in the Dockerfile and rebuild regularly; structured logs
+  surface tool versions on failure.
+- **SSRF via redirects.** The initial URL is validated against private
+  IP ranges and (optionally) an allowlist, but redirects inside
+  `gallery-dl` / `yt-dlp` are not intercepted — neither tool exposes
+  per-request IP pinning. Enable `YOINK_ALLOWLIST_MODE=true` to bound
+  reachable hosts.
+- **In-process queue.** Jobs live in `asyncio.Queue`; a hard kill drops
+  in-flight links. Users can repost. Swap to `arq` + Redis if horizontal
+  scale or durability is needed (queue boundary is stable).
+- **Orphan workdirs.** Per-job scratch dirs under `YOINK_WORKDIR` are
+  removed in `finally`, but a SIGKILL leaves them behind. Startup sweeps
+  all job subdirs and preserves `.heartbeat`.
+- **Stale `file_id` cache.** Telegram may invalidate cached `file_id`s
+  over long horizons. Currently accepted as residual risk; future work
+  is to purge on upload failure and re-fetch.
+- **NSFW / illegal content.** Out of scope. The bot mirrors whatever the
+  source returns; operate on chats you control.
+- **Token / cookie leakage.** Structured-log processors strip
+  `bot_token` and `cookies` keys; avoid passing them through `extra=`
+  paths that bypass the processor chain.
