@@ -413,10 +413,10 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Create: `src/yoink/core/rate_limiter.py`
 - Create: `tests/unit/test_rate_limiter.py`
 
-- [ ] `TokenBucketLimiter(rate_per_min, burst)` per chat_id; in-memory `dict[int, Bucket]` with monotonic clock; lazy GC of buckets idle >10 min
-- [ ] `try_acquire(chat_id) -> bool` non-blocking; consumed → True, exhausted → False (caller silently drops)
-- [ ] write tests: first N requests pass, N+1 fails, refills after time advance (monkeypatch `time.monotonic`), GC removes idle bucket
-- [ ] run `pytest -q` — must pass before Task 10
+- [x] `TokenBucketLimiter(rate_per_min, burst)` per chat_id; in-memory `dict[int, Bucket]` with monotonic clock; lazy GC of buckets idle >10 min
+- [x] `try_acquire(chat_id) -> bool` non-blocking; consumed → True, exhausted → False (caller silently drops)
+- [x] write tests: first N requests pass, N+1 fails, refills after time advance (monkeypatch `time.monotonic`), GC removes idle bucket
+- [x] run `pytest -q` — must pass before Task 10
 
 ### Task 10: Pipeline orchestration + worker pool
 
