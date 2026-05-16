@@ -73,6 +73,26 @@ def _write_sidecar(media_path: Path, meta: dict[str, object]) -> None:
     sidecar.write_text(json.dumps(meta), encoding="utf-8")
 
 
+@pytest.mark.asyncio
+async def test_fetch_purges_leftover_artifacts_before_run(tmp_path: Path) -> None:
+    """Stale files from a prior failed attempt must not be picked up on retry."""
+    # Simulate a leftover truncated file from a previous failed attempt.
+    stale = tmp_path / "stale_truncated.jpg"
+    _make_file(stale, size=4)
+    # gallery-dl writes a fresh file; collector must only see the fresh one.
+    fresh = tmp_path / "fresh.jpg"
+
+    def write_fresh(_cmd: list[str], cwd: Path) -> None:
+        _make_file(fresh, size=8)
+
+    runner = _Recorder([_result()], side_effect=write_fresh)
+    p = InstagramProvider(runner=runner, probe_video_dims=False)
+    pkg = await p.fetch("https://www.instagram.com/p/x/", tmp_path)
+    paths = [item.path.name for item in pkg.items]
+    assert "stale_truncated.jpg" not in paths
+    assert "fresh.jpg" in paths
+
+
 def test_can_handle_post() -> None:
     p = InstagramProvider()
     assert p.can_handle("https://www.instagram.com/p/ABCDEF/")

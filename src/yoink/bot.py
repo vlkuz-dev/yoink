@@ -21,5 +21,5 @@ def build_bot(settings: Settings) -> tuple[Bot, Dispatcher]:
 
     dp.update.outer_middleware(LoggingMiddleware())
 
-    register_routers(dp)
+    register_routers(dp, admin_ids=settings.admin_ids)
     return bot, dp

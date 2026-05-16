@@ -175,6 +175,23 @@ def test_admin_router_registers_three_commands() -> None:
     assert len(router.message.handlers) == 3
 
 
+def test_admin_router_applies_admin_filter_when_ids_passed() -> None:
+    from yoink.admin.commands import build_admin_router
+
+    # With admin_ids set, router-level filter is installed so non-admin
+    # messages skip admin handlers entirely (and fall through to message
+    # router for URL extraction).
+    router = build_admin_router(frozenset({42}))
+    assert len(router.message._handler.filters) >= 1
+
+
+def test_admin_router_no_filter_when_admin_ids_omitted() -> None:
+    from yoink.admin.commands import build_admin_router
+
+    router = build_admin_router(None)
+    assert router.message._handler.filters == []
+
+
 class _AllowAll:
     def try_acquire(self, _chat_id: int) -> bool:
         return True

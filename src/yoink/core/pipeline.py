@@ -153,9 +153,6 @@ class Pipeline:
             provider = self._registry.find(url)
             if provider is None:
                 continue
-            if not self._rate_limiter.try_acquire(chat_id):
-                _log.info("rate_limited", chat_id=chat_id, url=url)
-                continue
             url_hash = hash_url(url)
             cached = await self._cache.get(url_hash)
             if cached and await self._serve_cached(
@@ -165,6 +162,9 @@ class Pipeline:
                 url_hash=url_hash,
                 cached=cached,
             ):
+                continue
+            if not self._rate_limiter.try_acquire(chat_id):
+                _log.info("rate_limited", chat_id=chat_id, url=url)
                 continue
             job = Job(
                 chat_id=chat_id,

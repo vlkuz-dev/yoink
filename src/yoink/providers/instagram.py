@@ -228,6 +228,9 @@ class InstagramProvider:
 
     async def fetch(self, url: str, workdir: Path) -> MediaPackage:
         workdir.mkdir(parents=True, exist_ok=True)
+        # Purge any leftover artifacts from a prior failed attempt so the
+        # retry doesn't pick up truncated/half-written files as success.
+        self._purge_workdir(workdir)
 
         primary_err: str | None = None
         items: list[MediaItem] = []

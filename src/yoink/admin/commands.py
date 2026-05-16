@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.filters import Command
 
 from yoink.log import get_logger
@@ -67,8 +67,14 @@ async def cmd_flush(
     await message.reply(f"flushed: {removed}")
 
 
-def build_admin_router() -> Router:
+def build_admin_router(admin_ids: frozenset[int] | None = None) -> Router:
     router = Router(name="yoink.admin")
+    if admin_ids is not None:
+        # Filter at router level so non-admin messages skip admin handlers
+        # entirely and fall through to the message router. Without this,
+        # aiogram's Command filter consumes `/stats <url>` from non-admins
+        # and the URL is never extracted.
+        router.message.filter(F.from_user.id.in_(admin_ids))
     router.message.register(cmd_ping, Command("ping"))
     router.message.register(cmd_stats, Command("stats"))
     router.message.register(cmd_flush, Command("flush_cache"))

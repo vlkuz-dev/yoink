@@ -495,6 +495,53 @@ async def test_pipeline_rejects_unsafe_url(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_cache_hit_does_not_consume_rate_limit_token(tmp_path: Path) -> None:
+    """Cache hits skip rate-limit; otherwise a hot URL throttles legitimate misses."""
+    provider = FakeProvider(media_root=tmp_path)
+    uploader = FakeUploader()
+    cache = FileIdCache(tmp_path / "cache.sqlite")
+    await cache.init()
+    registry = ProviderRegistry()
+    registry.register(provider)
+    # Burst=1: only one fresh fetch allowed; cache hits must not drain it.
+    limiter = TokenBucketLimiter(rate_per_min=60, burst=1)
+
+    async def fast_sleep(_s: float) -> None:
+        return None
+
+    pipeline = Pipeline(
+        registry=registry,
+        cache=cache,
+        rate_limiter=limiter,
+        uploader=uploader,  # type: ignore[arg-type]
+        workdir_root=tmp_path / "work",
+        workers=1,
+        retry_sleep=fast_sleep,
+    )
+    await pipeline.start()
+    try:
+        u_cached = "https://www.instagram.com/p/cached/"
+        u_fresh = "https://www.instagram.com/p/fresh/"
+        await cache.put(
+            hash_url(u_cached),
+            u_cached,
+            "instagram",
+            [CachedFile(file_id="HIT", kind="photo", mime="image/jpeg")],
+        )
+        # Resend cached URL multiple times; none should drain the bucket.
+        for _ in range(5):
+            await pipeline.submit(_make_message(u_cached))
+        # Fresh URL must still get its one token.
+        await pipeline.submit(_make_message(u_fresh))
+        await pipeline.join()
+        assert provider.fetch_calls == [u_fresh]
+        assert len(uploader.cached_sends) == 5
+    finally:
+        await pipeline.stop()
+        await cache.close()
+
+
+@pytest.mark.asyncio
 async def test_pipeline_rate_limit_drops_url(tmp_path: Path) -> None:
     provider = FakeProvider(media_root=tmp_path)
     uploader = FakeUploader()
