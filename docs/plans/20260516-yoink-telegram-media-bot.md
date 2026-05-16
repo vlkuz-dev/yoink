@@ -397,15 +397,15 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Create: `src/yoink/uploader/telegram.py`
 - Create: `tests/unit/test_uploader.py`
 
-- [ ] `TelegramUploader(bot)` with `send(chat_id, reply_to, package: MediaPackage) -> list[CachedFile]` — returns Telegram `file_id`s in package order
-- [ ] single-item path: `send_photo` / `send_video` / `send_animation` / `send_document` based on `MediaItem.kind`
-- [ ] album path (len(items) ≥ 2): build `InputMediaPhoto` / `InputMediaVideo` list and call `send_media_group`; caption goes on first item only
-- [ ] **Telegram limit: media_group accepts 2–10 items**. For packages >10, chunk into multiple `send_media_group` calls of up to 10 each; caption only on first chunk's first item; preserve order across chunks
-- [ ] **mixed-kind handling**: `InputMediaPhoto` + `InputMediaVideo` can share a group; `InputMediaAnimation` / `InputMediaDocument` **cannot** be mixed with photo/video groups. Split: send photo+video items as one or more `send_media_group` calls, then send each animation/document individually as separate messages
-- [ ] handle `TelegramRetryAfter` by waiting `retry_after` + 0.5s then retrying once
-- [ ] handle `TelegramBadRequest` containing "file is too big" → raise `MediaTooLarge` to surface caller-side skip
-- [ ] write tests: single photo upload returns one file_id; album of 3 photos calls `send_media_group` once; album of 15 photos calls `send_media_group` twice (10+5) preserving order; mixed group (2 photos + 1 animation) sends one media_group call (photos) + one send_animation call; `RetryAfter` triggers sleep + retry (mock `asyncio.sleep`); too-big propagates
-- [ ] run `pytest -q` — must pass before Task 9
+- [x] `TelegramUploader(bot)` with `send(chat_id, reply_to, package: MediaPackage) -> list[CachedFile]` — returns Telegram `file_id`s in package order
+- [x] single-item path: `send_photo` / `send_video` / `send_animation` / `send_document` based on `MediaItem.kind`
+- [x] album path (len(items) ≥ 2): build `InputMediaPhoto` / `InputMediaVideo` list and call `send_media_group`; caption goes on first item only
+- [x] **Telegram limit: media_group accepts 2–10 items**. For packages >10, chunk into multiple `send_media_group` calls of up to 10 each; caption only on first chunk's first item; preserve order across chunks
+- [x] **mixed-kind handling**: `InputMediaPhoto` + `InputMediaVideo` can share a group; `InputMediaAnimation` / `InputMediaDocument` **cannot** be mixed with photo/video groups. Split: send photo+video items as one or more `send_media_group` calls, then send each animation/document individually as separate messages
+- [x] handle `TelegramRetryAfter` by waiting `retry_after` + 0.5s then retrying once
+- [x] handle `TelegramBadRequest` containing "file is too big" → raise `MediaTooLarge` to surface caller-side skip
+- [x] write tests: single photo upload returns one file_id; album of 3 photos calls `send_media_group` once; album of 15 photos calls `send_media_group` twice (10+5) preserving order; mixed group (2 photos + 1 animation) sends one media_group call (photos) + one send_animation call; `RetryAfter` triggers sleep + retry (mock `asyncio.sleep`); too-big propagates
+- [x] run `pytest -q` — must pass before Task 9
 
 ### Task 9: Rate limiter
 

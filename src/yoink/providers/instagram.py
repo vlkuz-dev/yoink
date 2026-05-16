@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 from urllib.parse import urlsplit
 
+from yoink.core.errors import MediaTooLarge, ProviderError, ProviderTransientError
 from yoink.core.models import MediaItem, MediaKind, MediaPackage
 from yoink.downloader.runner import (
     SubprocessResult,
@@ -20,26 +21,13 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable
 
 
-class ProviderError(RuntimeError):
-    """Permanent provider failure — pipeline logs and skips, never retries."""
-
-    def __init__(self, message: str, *, url: str | None = None) -> None:
-        super().__init__(message)
-        self.url = url
-
-
-class ProviderTransientError(ProviderError):
-    """Transient provider failure — eligible for pipeline retry."""
-
-
-class MediaTooLarge(ProviderError):  # noqa: N818  # name locked in plan
-    def __init__(self, path: Path, size_bytes: int, limit_bytes: int) -> None:
-        super().__init__(
-            f"media file {path.name} exceeds limit: {size_bytes}B > {limit_bytes}B",
-        )
-        self.path = path
-        self.size_bytes = size_bytes
-        self.limit_bytes = limit_bytes
+__all__ = [
+    "InstagramProvider",
+    "MediaTooLarge",
+    "ProviderError",
+    "ProviderTransientError",
+    "provider",
+]
 
 
 class _Runner(Protocol):
@@ -461,7 +449,7 @@ class InstagramProvider:
             return
         size = path.stat().st_size
         if size > limit:
-            raise MediaTooLarge(path, size, limit)
+            raise MediaTooLarge.from_size(path, size, limit)
 
     def _effective_cookies(self) -> Path | None:
         if self._cookies_file is not None:
