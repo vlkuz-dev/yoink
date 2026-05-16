@@ -149,6 +149,25 @@ async def test_carousel_three_items_stable_order(tmp_path: Path) -> None:
         assert item.height == 1350
 
 
+async def test_carousel_ten_items_numeric_order(tmp_path: Path) -> None:
+    # 10+ items: lexicographic sort would put _10 before _2 — verify
+    # numeric ordering keeps gallery-dl's index sequence intact.
+    def side(cmd: list[str], cwd: Path) -> None:
+        if cmd[0] == "gallery-dl":
+            for i in range(1, 11):
+                f = tmp_path / f"shortcode_{i}.jpg"
+                _make_file(f)
+                _write_sidecar(f, {"width": 1080, "height": 1080})
+
+    rec = _Recorder([_result()], side_effect=side)
+    p = InstagramProvider(runner=rec, probe_video_dims=False)
+    pkg = await p.fetch("https://www.instagram.com/p/CAROUSEL10/", tmp_path)
+
+    assert len(pkg.items) == 10
+    names = [it.path.name for it in pkg.items]
+    assert names == [f"shortcode_{i}.jpg" for i in range(1, 11)]
+
+
 async def test_reel_returns_video(tmp_path: Path) -> None:
     def side(cmd: list[str], cwd: Path) -> None:
         if cmd[0] == "gallery-dl":

@@ -250,6 +250,74 @@ async def test_pipeline_caches_on_second_submit(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_cache_resend_too_big_invalidates_and_refetches(tmp_path: Path) -> None:
+    from yoink.core.errors import MediaTooLarge
+
+    class TooBigOnce:
+        def __init__(self) -> None:
+            self.cached_sends = 0
+            self.sends: list[tuple[int, int | None, MediaPackage]] = []
+            self.next_file_id = 0
+
+        async def send(
+            self,
+            *,
+            chat_id: int,
+            reply_to: int | None,
+            package: MediaPackage,
+        ) -> list[CachedFile]:
+            self.sends.append((chat_id, reply_to, package))
+            out: list[CachedFile] = []
+            for item in package.items:
+                self.next_file_id += 1
+                out.append(
+                    CachedFile(
+                        file_id=f"FID-{self.next_file_id}",
+                        kind=item.kind,
+                        mime=item.mime,
+                    ),
+                )
+            return out
+
+        async def send_cached(
+            self,
+            *,
+            chat_id: int,
+            reply_to: int | None,
+            files: list[CachedFile],
+        ) -> list[CachedFile]:
+            self.cached_sends += 1
+            raise MediaTooLarge("file is too big", path=None)
+
+    provider = FakeProvider(media_root=tmp_path)
+    uploader = TooBigOnce()
+    pipeline, cache, _ = await _build_pipeline(
+        tmp_path, provider=provider, uploader=uploader,  # type: ignore[arg-type]
+    )
+    try:
+        url = "https://www.instagram.com/p/big/"
+        # Pre-seed cache with a stale file_id.
+        await cache.put(
+            hash_url(url),
+            url,
+            "instagram",
+            [CachedFile(file_id="STALE", kind="photo", mime="image/jpeg")],
+        )
+        await pipeline.submit(_make_message(url))
+        await pipeline.join()
+
+        assert uploader.cached_sends == 1
+        assert len(uploader.sends) == 1  # fresh fetch happened
+        assert len(provider.fetch_calls) == 1
+        # cache was invalidated then re-populated with fresh file_ids.
+        stored = await cache.get(hash_url(url))
+        assert stored is not None and stored[0].file_id != "STALE"
+    finally:
+        await pipeline.stop()
+        await cache.close()
+
+
+@pytest.mark.asyncio
 async def test_pipeline_silently_skips_unknown_url(tmp_path: Path) -> None:
     provider = FakeProvider(media_root=tmp_path)
     uploader = FakeUploader()

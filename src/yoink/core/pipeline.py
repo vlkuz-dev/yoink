@@ -210,8 +210,11 @@ class Pipeline:
             _log.exception("cache_resend_failed", url=url, chat_id=chat_id)
             return True
         except MediaTooLarge:
-            _log.exception("cache_resend_too_large", url=url, chat_id=chat_id)
-            return True
+            # cached file_id rejected as too-big -> entry is unusable;
+            # invalidate so the next attempt re-fetches.
+            await self._cache.delete(url_hash)
+            _log.warning("cache_resend_too_large", url=url, chat_id=chat_id)
+            return False
         except TelegramAPIError:
             _log.exception("cache_resend_api_error", url=url, chat_id=chat_id)
             return True

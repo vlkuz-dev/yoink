@@ -70,6 +70,7 @@ _ANIM_MIME: dict[str, str] = {"gif": "image/gif"}
 
 _IG_HOSTS: frozenset[str] = frozenset({"instagram.com", "instagr.am"})
 _IG_PATH_RE: re.Pattern[str] = re.compile(r"^/(p|reel|tv|stories)/", re.IGNORECASE)
+_TRAILING_NUM_RE: re.Pattern[str] = re.compile(r"_(\d+)$")
 
 _STDERR_PEEK = 512
 _DEFAULT_DOWNLOAD_TIMEOUT_S = 90.0
@@ -94,6 +95,14 @@ def _coerce_int(value: object) -> int | None:
     if isinstance(value, float):
         return int(value)
     return None
+
+
+def _sort_key(path: Path) -> tuple[int, int, str]:
+    # Sort by directory depth, then by trailing numeric suffix as int
+    # (so `_10.jpg` follows `_9.jpg`, not `_1.jpg`), then lexicographic.
+    match = _TRAILING_NUM_RE.search(path.stem)
+    num = int(match.group(1)) if match else -1
+    return (len(path.parts), num, str(path))
 
 
 def _safe_under(workdir: Path, candidate: Path) -> Path | None:
@@ -327,7 +336,7 @@ class InstagramProvider:
             if p.suffix.lstrip(".").lower() not in _MEDIA_EXTS:
                 continue
             media_paths.append(p)
-        media_paths.sort(key=lambda x: (len(x.parts), str(x)))
+        media_paths.sort(key=_sort_key)
 
         items: list[MediaItem] = []
         for path in media_paths:
