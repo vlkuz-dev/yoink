@@ -365,11 +365,11 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Create: `src/yoink/downloader/runner.py`
 - Create: `tests/unit/test_runner.py`
 
-- [ ] `run_subprocess(cmd: list[str], cwd: Path, timeout_s: int, env: dict) -> SubprocessResult` — uses `asyncio.create_subprocess_exec` with `stdout=PIPE, stderr=PIPE`, enforces timeout via `asyncio.wait_for` + kill on timeout, captures + caps stderr at 64 KB to keep logs manageable
-- [ ] returns `SubprocessResult(returncode, stdout: bytes, stderr: str, duration_s: float)`
-- [ ] never passes user input via `shell=True`; args are always a list
-- [ ] write tests: successful run captures stdout, failed run captures stderr + nonzero rc, timeout kills process and raises `SubprocessTimeout`, no shell injection (test with `cmd=["echo", "; rm -rf /"]` — verifies the literal arg, no shell)
-- [ ] run `pytest -q` — must pass before Task 7
+- [x] `run_subprocess(cmd: list[str], cwd: Path, timeout_s: int, env: dict) -> SubprocessResult` — uses `asyncio.create_subprocess_exec` with `stdout=PIPE, stderr=PIPE`, enforces timeout via `asyncio.wait_for` + kill on timeout, captures + caps stderr at 64 KB to keep logs manageable
+- [x] returns `SubprocessResult(returncode, stdout: bytes, stderr: str, duration_s: float)`
+- [x] never passes user input via `shell=True`; args are always a list
+- [x] write tests: successful run captures stdout, failed run captures stderr + nonzero rc, timeout kills process and raises `SubprocessTimeout`, no shell injection (test with `cmd=["echo", "; rm -rf /"]` — verifies the literal arg, no shell)
+- [x] run `pytest -q` — must pass before Task 7
 
 ### Task 7: Instagram provider (gallery-dl primary, yt-dlp fallback)
 

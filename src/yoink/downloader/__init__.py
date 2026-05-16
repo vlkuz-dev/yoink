@@ -1,3 +1,8 @@
+from yoink.downloader.runner import (
+    SubprocessResult,
+    SubprocessTimeoutError,
+    run_subprocess,
+)
 from yoink.downloader.safety import (
     UnsafeURLError,
     ValidatedURL,
@@ -6,8 +11,11 @@ from yoink.downloader.safety import (
 )
 
 __all__ = [
+    "SubprocessResult",
+    "SubprocessTimeoutError",
     "UnsafeURLError",
     "ValidatedURL",
+    "run_subprocess",
     "sanitize_filename",
     "validate_url",
 ]
