@@ -378,17 +378,17 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Create: `tests/unit/test_instagram_provider.py`
 - Create: `tests/fixtures/ig_gallery_dl_meta.json`
 
-- [ ] `InstagramProvider` with `name="instagram"`, `domains=frozenset({"instagram.com","www.instagram.com","instagr.am"})`
-- [ ] `can_handle(url)`: regex match against `/p/`, `/reel/`, `/tv/`, `/stories/` paths
-- [ ] `fetch(url, workdir)`: call `gallery-dl --dest <workdir> --no-part --no-skip -o output.mode=null -o output.shorten=false --write-metadata=false --dump-json <url>` via `run_subprocess` with `YOINK_IG_COOKIES_FILE` (`--cookies`) if set. `--dump-json` emits a single JSON array on stdout describing all extracted items (one element per file) — this is the parse target, not per-file `.json` sidecars. Files are still downloaded by gallery-dl into `workdir`.
-- [ ] correlate stdout JSON entries with on-disk files via the `filename`/`extension`/`subcategory` fields gallery-dl emits; resolve each to an absolute path under `workdir`
-- [ ] detect kind from extension + mime (`.mp4`/`.mov` → video, `.jpg`/`.png`/`.webp` → photo, `.gif` → animation)
-- [ ] fallback: if gallery-dl returns rc != 0 OR stdout JSON yields zero items OR no files on disk, run `yt-dlp -o '<workdir>/%(id)s.%(ext)s' --print-json --no-progress --no-warnings <url>` — `--print-json` emits one JSON line per downloaded video AND performs the actual download. Parse each line as a separate `MediaItem`.
-- [ ] use `ffprobe` (when binary available) to populate width/height/duration for videos when extractor metadata is missing
-- [ ] enforce `YOINK_MAX_FILE_MB` per file (raise `MediaTooLarge` — pipeline logs + skips)
-- [ ] export module-level `provider = InstagramProvider()` so autodiscovery picks it up
-- [ ] write tests (mock `run_subprocess` to return canned stdout + simulate files in `tmp_path`): single post returns 1 photo; carousel returns 3 items in stable order; reel returns 1 video; gallery-dl rc=1 triggers yt-dlp fallback and succeeds; gallery-dl rc=0 but zero items also triggers fallback; both fail raises `ProviderError`; `MediaTooLarge` raised when file exceeds limit; `can_handle` matches `/p/`, `/reel/`, rejects `/explore/`
-- [ ] run `pytest -q` — must pass before Task 8
+- [x] `InstagramProvider` with `name="instagram"`, `domains=frozenset({"instagram.com","www.instagram.com","instagr.am"})`
+- [x] `can_handle(url)`: regex match against `/p/`, `/reel/`, `/tv/`, `/stories/` paths
+- [x] `fetch(url, workdir)`: call `gallery-dl --dest <workdir> --no-part --no-skip -o output.mode=null -o output.shorten=false --write-metadata=false --dump-json <url>` via `run_subprocess` with `YOINK_IG_COOKIES_FILE` (`--cookies`) if set. `--dump-json` emits a single JSON array on stdout describing all extracted items (one element per file) — this is the parse target, not per-file `.json` sidecars. Files are still downloaded by gallery-dl into `workdir`.
+- [x] correlate stdout JSON entries with on-disk files via the `filename`/`extension`/`subcategory` fields gallery-dl emits; resolve each to an absolute path under `workdir`
+- [x] detect kind from extension + mime (`.mp4`/`.mov` → video, `.jpg`/`.png`/`.webp` → photo, `.gif` → animation)
+- [x] fallback: if gallery-dl returns rc != 0 OR stdout JSON yields zero items OR no files on disk, run `yt-dlp -o '<workdir>/%(id)s.%(ext)s' --print-json --no-progress --no-warnings <url>` — `--print-json` emits one JSON line per downloaded video AND performs the actual download. Parse each line as a separate `MediaItem`.
+- [x] use `ffprobe` (when binary available) to populate width/height/duration for videos when extractor metadata is missing
+- [x] enforce `YOINK_MAX_FILE_MB` per file (raise `MediaTooLarge` — pipeline logs + skips)
+- [x] export module-level `provider = InstagramProvider()` so autodiscovery picks it up
+- [x] write tests (mock `run_subprocess` to return canned stdout + simulate files in `tmp_path`): single post returns 1 photo; carousel returns 3 items in stable order; reel returns 1 video; gallery-dl rc=1 triggers yt-dlp fallback and succeeds; gallery-dl rc=0 but zero items also triggers fallback; both fail raises `ProviderError`; `MediaTooLarge` raised when file exceeds limit; `can_handle` matches `/p/`, `/reel/`, rejects `/explore/`
+- [x] run `pytest -q` — must pass before Task 8
 
 ### Task 8: Telegram uploader
 
