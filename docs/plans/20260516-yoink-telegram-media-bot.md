@@ -324,11 +324,11 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Create: `tests/unit/test_registry.py`
 - Create: `tests/fixtures/dummy_provider.py` (test-only fake provider)
 
-- [ ] create `providers/base.py` with `Provider` `Protocol` (name, domains, can_handle, fetch)
-- [ ] create `core/registry.py` with `ProviderRegistry` — `register()`, `find(url)`, `autodiscover()` via `pkgutil.iter_modules(yoink.providers.__path__)` importing each and picking up module-level `provider` attribute matching the Protocol
-- [ ] `find()` first matches by URL host against `domains`, then calls `can_handle()` for fine-grained check
-- [ ] write tests: register manual provider then find by URL; autodiscover picks up a fixture provider; unknown URL returns `None`; `find()` is host-normalized (`www.` and case-insensitive)
-- [ ] run `pytest -q` — must pass before Task 4
+- [x] create `providers/base.py` with `Provider` `Protocol` (name, domains, can_handle, fetch)
+- [x] create `core/registry.py` with `ProviderRegistry` — `register()`, `find(url)`, `autodiscover()` via `pkgutil.iter_modules(yoink.providers.__path__)` importing each and picking up module-level `provider` attribute matching the Protocol
+- [x] `find()` first matches by URL host against `domains`, then calls `can_handle()` for fine-grained check
+- [x] write tests: register manual provider then find by URL; autodiscover picks up a fixture provider; unknown URL returns `None`; `find()` is host-normalized (`www.` and case-insensitive)
+- [x] run `pytest -q` — must pass before Task 4
 
 ### Task 4: Cache layer (SQLite file_id store)
 
