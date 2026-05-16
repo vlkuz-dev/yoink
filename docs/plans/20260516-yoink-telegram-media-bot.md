@@ -352,12 +352,12 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Create: `src/yoink/downloader/safety.py`
 - Create: `tests/unit/test_safety.py`
 
-- [ ] `validate_url(url, allowlist: frozenset[str] | None) -> ValidatedURL` — must be `https?://`, resolve **all** A/AAAA records and reject if **any** falls in private/reserved ranges (`0.0.0.0/8`, `10/8`, `100.64/10` CGNAT, `127/8`, `169.254/16`, `172.16/12`, `192.168/16`, `224/4` multicast; IPv6: `::1`, `fc00::/7` ULA, `fe80::/10` link-local, `ff00::/8` multicast), reject userinfo (`user:pass@`), reject ports outside `{80, 443}` unless explicitly allowed
-- [ ] if `allowlist` non-None, host must be in allowlist (post-normalization, suffix match for subdomains)
-- [ ] `sanitize_filename(name: str) -> str` — strip path separators, control chars, leading dots, limit to 200 chars, NFKD normalize
-- [ ] note: full DNS rebinding protection requires IP pinning into the subprocess, which `gallery-dl`/`yt-dlp` don't support per-request — accept this residual risk; document in README; allowlist mode is the harder mitigation
-- [ ] write tests: rejects `file://`, `ftp://`, `http://127.0.0.1`, `http://10.0.0.1`, `http://[::1]`, `http://100.64.0.1`, `http://user:pwd@x`; rejects when **any** resolved IP is private (mock `socket.getaddrinfo` returning mixed RRset); accepts `https://www.instagram.com/p/...`; allowlist enforced; sanitize strips `../` and nulls
-- [ ] run `pytest -q` — must pass before Task 6
+- [x] `validate_url(url, allowlist: frozenset[str] | None) -> ValidatedURL` — must be `https?://`, resolve **all** A/AAAA records and reject if **any** falls in private/reserved ranges (`0.0.0.0/8`, `10/8`, `100.64/10` CGNAT, `127/8`, `169.254/16`, `172.16/12`, `192.168/16`, `224/4` multicast; IPv6: `::1`, `fc00::/7` ULA, `fe80::/10` link-local, `ff00::/8` multicast), reject userinfo (`user:pass@`), reject ports outside `{80, 443}` unless explicitly allowed
+- [x] if `allowlist` non-None, host must be in allowlist (post-normalization, suffix match for subdomains)
+- [x] `sanitize_filename(name: str) -> str` — strip path separators, control chars, leading dots, limit to 200 chars, NFKD normalize
+- [x] note: full DNS rebinding protection requires IP pinning into the subprocess, which `gallery-dl`/`yt-dlp` don't support per-request — accept this residual risk; document in README; allowlist mode is the harder mitigation
+- [x] write tests: rejects `file://`, `ftp://`, `http://127.0.0.1`, `http://10.0.0.1`, `http://[::1]`, `http://100.64.0.1`, `http://user:pwd@x`; rejects when **any** resolved IP is private (mock `socket.getaddrinfo` returning mixed RRset); accepts `https://www.instagram.com/p/...`; allowlist enforced; sanitize strips `../` and nulls
+- [x] run `pytest -q` — must pass before Task 6
 
 ### Task 6: Subprocess runner
 
