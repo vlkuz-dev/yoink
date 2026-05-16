@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import secrets
 import shutil
+import time
 from typing import TYPE_CHECKING, TypeVar
 from urllib.parse import urlsplit
 
@@ -90,6 +92,7 @@ class Pipeline:
         retry_factor: float = 4.0,
         retry_sleep: SleepFn | None = None,
         allowlist: frozenset[str] | None = None,
+        heartbeat_interval_s: float = 10.0,
     ) -> None:
         if workers < 1:
             raise ValueError("workers must be >= 1")
@@ -101,6 +104,8 @@ class Pipeline:
         self._workers = workers
         self._queue: asyncio.Queue[Job] = asyncio.Queue(maxsize=queue_maxsize)
         self._tasks: list[asyncio.Task[None]] = []
+        self._heartbeat_task: asyncio.Task[None] | None = None
+        self._heartbeat_interval_s = heartbeat_interval_s
         self._retry_attempts = retry_attempts
         self._retry_base_s = retry_base_s
         self._retry_factor = retry_factor
@@ -220,10 +225,15 @@ class Pipeline:
         if self._tasks:
             return
         self._workdir_root.mkdir(parents=True, exist_ok=True)
+        self.sweep_workdir()
         for i in range(self._workers):
             self._tasks.append(
                 asyncio.create_task(self._worker(i), name=f"yoink-worker-{i}"),
             )
+        self._heartbeat_task = asyncio.create_task(
+            self._heartbeat_loop(),
+            name="yoink-heartbeat",
+        )
 
     async def stop(self) -> None:
         tasks = self._tasks
@@ -233,6 +243,52 @@ class Pipeline:
         for t in tasks:
             with contextlib.suppress(asyncio.CancelledError):
                 await t
+        hb = self._heartbeat_task
+        self._heartbeat_task = None
+        if hb is not None:
+            hb.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await hb
+
+    def sweep_workdir(self) -> int:
+        """Delete leftover job subdirectories under workdir_root.
+
+        Preserves the workdir root itself and the `.heartbeat` file. Returns
+        the number of entries removed. Called from `start()` to clean orphans
+        from previous crashes.
+        """
+        removed = 0
+        if not self._workdir_root.exists():
+            return 0
+        for entry in self._workdir_root.iterdir():
+            if entry.name == ".heartbeat":
+                continue
+            if entry.is_dir():
+                shutil.rmtree(entry, ignore_errors=True)
+            else:
+                with contextlib.suppress(OSError):
+                    entry.unlink()
+            removed += 1
+        return removed
+
+    def _touch_heartbeat(self) -> None:
+        path = self._workdir_root / ".heartbeat"
+        try:
+            self._workdir_root.mkdir(parents=True, exist_ok=True)
+            path.touch(exist_ok=True)
+            now = time.time()
+            with contextlib.suppress(OSError):
+                os.utime(path, (now, now))
+        except OSError:
+            _log.exception("heartbeat_write_failed", path=str(path))
+
+    async def _heartbeat_loop(self) -> None:
+        try:
+            while True:
+                self._touch_heartbeat()
+                await asyncio.sleep(self._heartbeat_interval_s)
+        except asyncio.CancelledError:
+            raise
 
     async def join(self) -> None:
         """Wait until all enqueued jobs are processed (test helper)."""

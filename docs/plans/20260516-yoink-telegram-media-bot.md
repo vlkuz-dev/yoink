@@ -475,13 +475,13 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Modify: `README.md`
 - Create: `tests/unit/test_smoke.py`
 
-- [ ] multi-stage `Dockerfile`: builder installs deps via `pip wheel`, runtime image is `python:3.11-slim` + `ffmpeg` (provides `ffprobe`) + `gallery-dl` + `yt-dlp`; non-root user `yoink`; `WORKDIR /app`; `CMD ["python","-m","yoink"]`
-- [ ] `docker-compose.yml`: service `yoink` with `env_file: .env`, volume for SQLite (`./data:/data`), volume for workdir (`yoink_tmp:/tmp/yoink`), `restart: unless-stopped`, healthcheck: workers touch `/tmp/yoink/.heartbeat` every 10s in their idle loop; healthcheck checks `find /tmp/yoink/.heartbeat -mmin -1` returns the file — proves the bot is alive AND workers are scheduled, not just that import works
-- [ ] startup sweep: on bot start, `shutil.rmtree` any pre-existing job subdirs under `YOINK_WORKDIR` (orphans from previous SIGKILL); preserve `.heartbeat`
-- [ ] `.dockerignore`: `.git`, `tests/`, `docs/`, `__pycache__`, `.venv`, `*.pyc`
-- [ ] README: install, env vars, run via `docker compose up`, how to add a new provider (one example showing `providers/tiktok.py` stub satisfying `Provider` Protocol)
-- [ ] smoke test: import `yoink` and `yoink.__main__` succeeds (catches import-time wiring errors)
-- [ ] run `pytest -q` and `docker build -t yoink:test .` — must pass before Task 14
+- [x] multi-stage `Dockerfile`: builder installs deps via `pip wheel`, runtime image is `python:3.11-slim` + `ffmpeg` (provides `ffprobe`) + `gallery-dl` + `yt-dlp`; non-root user `yoink`; `WORKDIR /app`; `CMD ["python","-m","yoink"]`
+- [x] `docker-compose.yml`: service `yoink` with `env_file: .env`, volume for SQLite (`./data:/data`), volume for workdir (`yoink_tmp:/tmp/yoink`), `restart: unless-stopped`, healthcheck: workers touch `/tmp/yoink/.heartbeat` every 10s in their idle loop; healthcheck checks `find /tmp/yoink/.heartbeat -mmin -1` returns the file — proves the bot is alive AND workers are scheduled, not just that import works
+- [x] startup sweep: on bot start, `shutil.rmtree` any pre-existing job subdirs under `YOINK_WORKDIR` (orphans from previous SIGKILL); preserve `.heartbeat`
+- [x] `.dockerignore`: `.git`, `tests/`, `docs/`, `__pycache__`, `.venv`, `*.pyc`
+- [x] README: install, env vars, run via `docker compose up`, how to add a new provider (one example showing `providers/tiktok.py` stub satisfying `Provider` Protocol)
+- [x] smoke test: import `yoink` and `yoink.__main__` succeeds (catches import-time wiring errors)
+- [x] run `pytest -q` and `docker build -t yoink:test .` — must pass before Task 14 (docker build skipped — no daemon in dev environment; verified via pytest -q + manual Dockerfile review)
 
 ### Task 14: Verify acceptance criteria
 

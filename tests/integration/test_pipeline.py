@@ -336,6 +336,75 @@ async def test_pipeline_workdir_cleaned_after_job(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_pipeline_sweeps_orphan_workdirs_on_start(tmp_path: Path) -> None:
+    work_root = tmp_path / "work"
+    work_root.mkdir()
+    orphan_a = work_root / "abc123"
+    orphan_a.mkdir()
+    (orphan_a / "stale.bin").write_bytes(b"x")
+    orphan_b = work_root / "def456"
+    orphan_b.mkdir()
+    heartbeat = work_root / ".heartbeat"
+    heartbeat.write_text("")
+
+    provider = FakeProvider(media_root=tmp_path)
+    uploader = FakeUploader()
+    cache = FileIdCache(tmp_path / "cache.sqlite")
+    await cache.init()
+    registry = ProviderRegistry()
+    registry.register(provider)
+    limiter = TokenBucketLimiter(rate_per_min=600, burst=600)
+    pipeline = Pipeline(
+        registry=registry,
+        cache=cache,
+        rate_limiter=limiter,
+        uploader=uploader,  # type: ignore[arg-type]
+        workdir_root=work_root,
+        workers=1,
+    )
+    await pipeline.start()
+    try:
+        assert not orphan_a.exists()
+        assert not orphan_b.exists()
+        assert heartbeat.exists()  # preserved
+    finally:
+        await pipeline.stop()
+        await cache.close()
+
+
+@pytest.mark.asyncio
+async def test_pipeline_writes_heartbeat(tmp_path: Path) -> None:
+    work_root = tmp_path / "work"
+    provider = FakeProvider(media_root=tmp_path)
+    uploader = FakeUploader()
+    cache = FileIdCache(tmp_path / "cache.sqlite")
+    await cache.init()
+    registry = ProviderRegistry()
+    registry.register(provider)
+    limiter = TokenBucketLimiter(rate_per_min=600, burst=600)
+    pipeline = Pipeline(
+        registry=registry,
+        cache=cache,
+        rate_limiter=limiter,
+        uploader=uploader,  # type: ignore[arg-type]
+        workdir_root=work_root,
+        workers=1,
+        heartbeat_interval_s=0.01,
+    )
+    await pipeline.start()
+    try:
+        heartbeat = work_root / ".heartbeat"
+        for _ in range(50):
+            if heartbeat.exists():
+                break
+            await asyncio.sleep(0.01)
+        assert heartbeat.exists()
+    finally:
+        await pipeline.stop()
+        await cache.close()
+
+
+@pytest.mark.asyncio
 async def test_pipeline_rate_limit_drops_url(tmp_path: Path) -> None:
     provider = FakeProvider(media_root=tmp_path)
     uploader = FakeUploader()
