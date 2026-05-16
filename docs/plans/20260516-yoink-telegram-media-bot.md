@@ -338,12 +338,12 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Create: `src/yoink/cache/schema.sql`
 - Create: `tests/unit/test_cache.py`
 
-- [ ] write `schema.sql`: tables `cached_url(url_hash TEXT PK, source_url TEXT, provider TEXT, created_at INTEGER, last_used_at INTEGER)` and `cached_file(url_hash TEXT, position INT, file_id TEXT, kind TEXT, mime TEXT, PRIMARY KEY(url_hash, position))` with FK (`last_used_at` reserved for future LRU eviction — populated by `get()` but no eviction in MVP)
-- [ ] create `cache/store.py` — `FileIdCache(db_path)` with `init()` (runs schema), `get(url_hash)`, `put(url_hash, source_url, provider, files)`, `flush()`, `stats()`
-- [ ] use `aiosqlite` with WAL mode, single shared connection guarded by `asyncio.Lock` for writes
-- [ ] add `hash_url(normalized_url: str) -> str` helper (sha256, hex, 32 chars)
-- [ ] write tests: init creates schema; put + get round-trips ordered list of files; missing key returns `None`; flush clears; stats returns counts; concurrent puts don't corrupt
-- [ ] run `pytest -q` — must pass before Task 5
+- [x] write `schema.sql`: tables `cached_url(url_hash TEXT PK, source_url TEXT, provider TEXT, created_at INTEGER, last_used_at INTEGER)` and `cached_file(url_hash TEXT, position INT, file_id TEXT, kind TEXT, mime TEXT, PRIMARY KEY(url_hash, position))` with FK (`last_used_at` reserved for future LRU eviction — populated by `get()` but no eviction in MVP)
+- [x] create `cache/store.py` — `FileIdCache(db_path)` with `init()` (runs schema), `get(url_hash)`, `put(url_hash, source_url, provider, files)`, `flush()`, `stats()`
+- [x] use `aiosqlite` with WAL mode, single shared connection guarded by `asyncio.Lock` for writes
+- [x] add `hash_url(normalized_url: str) -> str` helper (sha256, hex, 32 chars)
+- [x] write tests: init creates schema; put + get round-trips ordered list of files; missing key returns `None`; flush clears; stats returns counts; concurrent puts don't corrupt
+- [x] run `pytest -q` — must pass before Task 5
 
 ### Task 5: Safety layer (SSRF, filename sanitization, URL validation)
 
