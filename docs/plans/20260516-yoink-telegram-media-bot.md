@@ -308,12 +308,12 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Create: `src/yoink/extractor/urls.py`
 - Create: `tests/unit/test_extractor.py`
 
-- [ ] create `core/models.py` with `MediaItem`, `MediaPackage`, `Job` dataclasses (slots=True, kw_only where appropriate)
-- [ ] create `extractor/urls.py` with `extract_urls(message: aiogram.types.Message) -> list[str]` — uses `message.entities` first (URL + TEXT_LINK), falls back to regex on plain text only when no entities
-- [ ] regex fallback strips trailing punctuation (`.,;:!?)]}>"'`) commonly attached to pasted URLs
-- [ ] add `normalize_url(url: str) -> str` — strips known tracking params (`utm_*`, `igshid`, `si`, `fbclid`), lowercases scheme/host, removes fragment
-- [ ] write tests: extracts from text-mode entity, text_link entity (uses entity.url not displayed text), plain regex fallback, trailing-punct stripped (`https://x.com/p/abc).` → `https://x.com/p/abc`), ignores `tg://` and `mailto:`, normalizes IG URL strips `?igshid=…`
-- [ ] run `pytest -q` — must pass before Task 3
+- [x] create `core/models.py` with `MediaItem`, `MediaPackage`, `Job` dataclasses (slots=True, kw_only where appropriate)
+- [x] create `extractor/urls.py` with `extract_urls(message: aiogram.types.Message) -> list[str]` — uses `message.entities` first (URL + TEXT_LINK), falls back to regex on plain text only when no entities
+- [x] regex fallback strips trailing punctuation (`.,;:!?)]}>"'`) commonly attached to pasted URLs
+- [x] add `normalize_url(url: str) -> str` — strips known tracking params (`utm_*`, `igshid`, `si`, `fbclid`), lowercases scheme/host, removes fragment
+- [x] write tests: extracts from text-mode entity, text_link entity (uses entity.url not displayed text), plain regex fallback, trailing-punct stripped (`https://x.com/p/abc).` → `https://x.com/p/abc`), ignores `tg://` and `mailto:`, normalizes IG URL strips `?igshid=…`
+- [x] run `pytest -q` — must pass before Task 3
 
 ### Task 3: Provider interface + registry with autodiscovery
 
