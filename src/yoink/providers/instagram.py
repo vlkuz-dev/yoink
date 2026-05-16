@@ -112,14 +112,22 @@ def _safe_under(workdir: Path, candidate: Path) -> Path | None:
 
 
 def _read_sidecar(media_path: Path) -> dict[str, Any]:
-    sidecar = media_path.parent / (media_path.name + ".json")
-    if not sidecar.is_file():
-        return {}
-    try:
-        parsed = json.loads(sidecar.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
+    # gallery-dl `--write-metadata` writes `<name>.json`; yt-dlp
+    # `--write-info-json` writes `<stem>.info.json`.
+    candidates = (
+        media_path.parent / (media_path.name + ".json"),
+        media_path.parent / (media_path.stem + ".info.json"),
+    )
+    for sidecar in candidates:
+        if not sidecar.is_file():
+            continue
+        try:
+            parsed = json.loads(sidecar.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return {}
 
 
 async def _ffprobe_dims(
@@ -220,6 +228,9 @@ class InstagramProvider:
             primary_err = str(exc)
 
         if not items:
+            # Purge gallery-dl partials so yt-dlp's _collect_items doesn't
+            # pick up truncated/half-written files as successful artifacts.
+            self._purge_workdir(workdir)
             try:
                 items = await self._run_yt_dlp(url, workdir)
             except _ToolFailed as exc:
@@ -361,6 +372,38 @@ class InstagramProvider:
         size = path.stat().st_size
         if size > limit:
             raise MediaTooLarge.from_size(path, size, limit)
+
+    def configure(
+        self,
+        *,
+        cookies_file: Path | None = None,
+        max_file_bytes: int | None = None,
+        download_timeout_s: float | None = None,
+    ) -> None:
+        """Apply runtime settings to the autodiscovered singleton.
+
+        Called from `__main__` after autodiscover so values loaded from
+        `.env` via pydantic-settings reach the provider — the singleton
+        is constructed at import time before Settings exists, and
+        pydantic-settings does not export `.env` into `os.environ`.
+        """
+        if cookies_file is not None:
+            self._cookies_file = cookies_file
+        if max_file_bytes is not None:
+            self._max_file_bytes = max_file_bytes
+        if download_timeout_s is not None:
+            self._download_timeout_s = download_timeout_s
+
+    @staticmethod
+    def _purge_workdir(workdir: Path) -> None:
+        if not workdir.exists():
+            return
+        for entry in workdir.iterdir():
+            if entry.is_dir():
+                shutil.rmtree(entry, ignore_errors=True)
+            else:
+                with contextlib.suppress(OSError):
+                    entry.unlink()
 
     def _effective_cookies(self) -> Path | None:
         if self._cookies_file is not None:

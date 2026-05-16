@@ -12,6 +12,7 @@ from yoink.core.pipeline import Pipeline
 from yoink.core.rate_limiter import TokenBucketLimiter
 from yoink.core.registry import ProviderRegistry
 from yoink.log import configure_logging, get_logger
+from yoink.providers.instagram import provider as instagram_provider
 from yoink.uploader.telegram import TelegramUploader
 
 
@@ -29,6 +30,11 @@ async def _run() -> int:
     cache = FileIdCache(settings.cache_db)
     await cache.init()
 
+    instagram_provider.configure(
+        cookies_file=settings.ig_cookies_file,
+        max_file_bytes=settings.max_file_mb * 1024 * 1024,
+        download_timeout_s=float(settings.download_timeout_s),
+    )
     registry = ProviderRegistry.autodiscover()
     rate_limiter = TokenBucketLimiter(rate_per_min=settings.rate_per_chat_per_min)
     bot, dp = build_bot(settings)

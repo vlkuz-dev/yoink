@@ -369,3 +369,74 @@ async def test_ctor_timeout_overrides_env(
     await p.fetch("https://www.instagram.com/p/TO2/", tmp_path)
 
     assert seen_timeouts == [33.0]
+
+
+async def test_yt_dlp_info_json_sidecar_resolved(tmp_path: Path) -> None:
+    """yt-dlp writes `<stem>.info.json`; _read_sidecar must find it."""
+    def side(cmd: list[str], cwd: Path) -> None:
+        if cmd[0] == "yt-dlp":
+            f = tmp_path / "ytid.mp4"
+            _make_file(f)
+            sidecar = tmp_path / "ytid.info.json"
+            sidecar.write_text(
+                json.dumps({"width": 640, "height": 360, "duration": 7}),
+                encoding="utf-8",
+            )
+
+    rec = _Recorder(
+        [
+            _result(returncode=1, stderr="login required"),
+            _result(),
+        ],
+        side_effect=side,
+    )
+    p = InstagramProvider(runner=rec, probe_video_dims=False)
+    pkg = await p.fetch("https://www.instagram.com/reel/INF/", tmp_path)
+
+    assert len(pkg.items) == 1
+    it = pkg.items[0]
+    assert it.kind == "video"
+    assert it.width == 640
+    assert it.height == 360
+    assert it.duration_s == 7
+
+
+async def test_workdir_purged_between_extractors(tmp_path: Path) -> None:
+    """Partial gallery-dl artifacts must not leak into yt-dlp's collection."""
+    def side(cmd: list[str], cwd: Path) -> None:
+        if cmd[0] == "gallery-dl":
+            # Simulate a half-downloaded primary artifact.
+            _make_file(tmp_path / "partial.jpg", size=4)
+        elif cmd[0] == "yt-dlp":
+            _make_file(tmp_path / "real.mp4")
+
+    rec = _Recorder(
+        [
+            _result(returncode=1, stderr="failed"),
+            _result(),
+        ],
+        side_effect=side,
+    )
+    p = InstagramProvider(runner=rec, probe_video_dims=False)
+    pkg = await p.fetch("https://www.instagram.com/reel/PURGE/", tmp_path)
+
+    assert len(pkg.items) == 1
+    # Only yt-dlp's artifact survives — gallery-dl's partial was purged.
+    assert pkg.items[0].path.name == "real.mp4"
+    assert not (tmp_path / "partial.jpg").exists()
+
+
+def test_configure_applies_runtime_settings(tmp_path: Path) -> None:
+    p = InstagramProvider()
+    cookies = tmp_path / "c.txt"
+    cookies.write_text("c", encoding="utf-8")
+
+    p.configure(
+        cookies_file=cookies,
+        max_file_bytes=4096,
+        download_timeout_s=12.0,
+    )
+
+    assert p._effective_cookies() == cookies
+    assert p._effective_max_bytes() == 4096
+    assert p._effective_timeout() == 12.0
