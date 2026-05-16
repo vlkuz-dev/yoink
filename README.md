@@ -7,12 +7,18 @@ provider; additional platforms drop in as single-file modules.
 ## Quick start (dev)
 
 ```bash
-uv venv --python 3.12
+uv venv --python 3.11        # 3.11+ required
 source .venv/bin/activate
 uv pip install -e ".[dev]"
 cp .env.example .env  # fill YOINK_BOT_TOKEN
 python -m yoink
 ```
+
+Configure the bot via @BotFather:
+
+- Create a bot, copy the token into `YOINK_BOT_TOKEN`.
+- For group usage, run `/setprivacy` → **Disable** for the bot, so it can see
+  non-command messages. In DMs this is not required.
 
 System binaries required at runtime: `gallery-dl`, `yt-dlp`, and `ffmpeg`
 (provides `ffprobe`). Install via your package manager or pip:
@@ -60,10 +66,34 @@ complete list.
 | `YOINK_MAX_FILE_MB` | `50` | Telegram bot API upload cap |
 | `YOINK_RATE_PER_CHAT_PER_MIN` | `10` | Token-bucket refill per chat |
 | `YOINK_ALLOWLIST_MODE` | `false` | If `true`, drop URLs whose host is not in the registered provider domain set |
-| `YOINK_ADMIN_IDS` | _(empty)_ | Comma-separated user IDs for `/stats`, `/flush_cache` |
+| `YOINK_ADMIN_IDS` | _(empty)_ | Comma-separated user IDs for `/ping`, `/stats`, `/flush_cache` |
 | `YOINK_CACHE_DB` | `/data/yoink.sqlite` | SQLite file path |
 | `YOINK_WORKDIR` | `/tmp/yoink` | Per-job scratch dir parent |
 | `YOINK_IG_COOKIES_FILE` | _(empty)_ | gallery-dl cookie file for private/age-gated IG |
+
+## Admin commands
+
+Users whose IDs appear in `YOINK_ADMIN_IDS` can DM the bot:
+
+- `/ping` → `pong` (liveness check)
+- `/stats` → cache URL/file counts + queue depth + worker count
+- `/flush_cache` → drop all cached `file_id`s; reply contains count removed
+
+Non-admins receive no reply (commands are silent).
+
+## Instagram cookies
+
+For private or age-gated Instagram posts, supply a Netscape-format cookie file
+exported from a logged-in browser session. Two reliable ways to obtain it:
+
+- `gallery-dl --cookies-from-browser firefox` writes cookies to stdout; redirect
+  to a file.
+- A browser extension like "Get cookies.txt LOCALLY" exports the current
+  session as Netscape format.
+
+Mount the file into the container and set `YOINK_IG_COOKIES_FILE` to the
+in-container path. Treat the file as a secret: it grants session-level access
+to the source account.
 
 ## Adding a new provider
 

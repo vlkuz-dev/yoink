@@ -49,6 +49,7 @@ class _ToolFailed(Exception):  # noqa: N818  # internal sentinel, not surfaced
 _VIDEO_EXTS: frozenset[str] = frozenset({"mp4", "mov", "m4v", "webm", "mkv"})
 _PHOTO_EXTS: frozenset[str] = frozenset({"jpg", "jpeg", "png", "webp", "heic", "heif"})
 _ANIM_EXTS: frozenset[str] = frozenset({"gif"})
+_MEDIA_EXTS: frozenset[str] = _VIDEO_EXTS | _PHOTO_EXTS | _ANIM_EXTS
 
 _VIDEO_MIME: dict[str, str] = {
     "mp4": "video/mp4",
@@ -71,6 +72,7 @@ _IG_HOSTS: frozenset[str] = frozenset({"instagram.com", "instagr.am"})
 _IG_PATH_RE: re.Pattern[str] = re.compile(r"^/(p|reel|tv|stories)/", re.IGNORECASE)
 
 _STDERR_PEEK = 512
+_DEFAULT_DOWNLOAD_TIMEOUT_S = 90.0
 
 
 def _kind_for_ext(ext: str) -> tuple[MediaKind, str | None]:
@@ -109,90 +111,15 @@ def _safe_under(workdir: Path, candidate: Path) -> Path | None:
     return resolved
 
 
-def _parse_gallery_dl_stdout(raw: bytes) -> list[dict[str, Any]]:
-    if not raw or not raw.strip():
-        return []
-    text = raw.decode("utf-8", errors="replace").strip()
+def _read_sidecar(media_path: Path) -> dict[str, Any]:
+    sidecar = media_path.parent / (media_path.name + ".json")
+    if not sidecar.is_file():
+        return {}
     try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError:
-        items: list[dict[str, Any]] = []
-        for line in text.splitlines():
-            line_stripped = line.strip()
-            if not line_stripped:
-                continue
-            try:
-                obj = json.loads(line_stripped)
-            except json.JSONDecodeError:
-                continue
-            items.extend(_extract_gallery_dl_meta(obj))
-        return items
-    return _extract_gallery_dl_meta(parsed)
-
-
-def _extract_gallery_dl_meta(obj: Any) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    if isinstance(obj, list):
-        for entry in obj:
-            if isinstance(entry, dict):
-                out.append(entry)
-            elif (
-                isinstance(entry, list)
-                and len(entry) >= 3
-                and isinstance(entry[2], dict)
-            ):
-                out.append(entry[2])
-    elif isinstance(obj, dict):
-        out.append(obj)
-    return out
-
-
-def _resolve_gallery_dl_file(meta: dict[str, Any], workdir: Path) -> Path | None:
-    fn = meta.get("filename")
-    ext = meta.get("extension")
-    if not isinstance(fn, str) or not fn:
-        return None
-    candidates: list[Path] = [workdir / fn]
-    if isinstance(ext, str) and ext:
-        candidates.append(workdir / f"{fn}.{ext}")
-    for c in candidates:
-        match = _safe_under(workdir, c)
-        if match is not None:
-            return match
-    return None
-
-
-def _resolve_yt_dlp_file(meta: dict[str, Any], workdir: Path) -> Path | None:
-    requested = meta.get("requested_downloads")
-    if isinstance(requested, list):
-        for entry in requested:
-            if not isinstance(entry, dict):
-                continue
-            for key in ("filepath", "_filename", "filename"):
-                value = entry.get(key)
-                if isinstance(value, str) and value:
-                    candidate = Path(value)
-                    if not candidate.is_absolute():
-                        candidate = workdir / candidate
-                    match = _safe_under(workdir, candidate)
-                    if match is not None:
-                        return match
-    for key in ("_filename", "filename"):
-        value = meta.get(key)
-        if isinstance(value, str) and value:
-            candidate = Path(value)
-            if not candidate.is_absolute():
-                candidate = workdir / candidate
-            match = _safe_under(workdir, candidate)
-            if match is not None:
-                return match
-    vid = meta.get("id")
-    ext = meta.get("ext")
-    if isinstance(vid, str) and isinstance(ext, str) and vid and ext:
-        match = _safe_under(workdir, workdir / f"{vid}.{ext}")
-        if match is not None:
-            return match
-    return None
+        parsed = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 async def _ffprobe_dims(
@@ -261,7 +188,7 @@ class InstagramProvider:
         runner: _Runner | None = None,
         cookies_file: Path | None = None,
         max_file_bytes: int | None = None,
-        download_timeout_s: float = 90.0,
+        download_timeout_s: float | None = None,
         probe_video_dims: bool = True,
     ) -> None:
         self._runner: _Runner = runner if runner is not None else run_subprocess
@@ -318,7 +245,8 @@ class InstagramProvider:
     async def _run_gallery_dl(self, url: str, workdir: Path) -> list[MediaItem]:
         cmd: list[str] = [
             "gallery-dl",
-            "--dest",
+            "--no-config",
+            "-D",
             str(workdir),
             "--no-part",
             "--no-skip",
@@ -326,53 +254,20 @@ class InstagramProvider:
             "output.mode=null",
             "-o",
             "output.shorten=false",
-            "--write-metadata=false",
-            "--dump-json",
+            "--write-metadata",
         ]
         cookies = self._effective_cookies()
         if cookies is not None:
             cmd.extend(["--cookies", str(cookies)])
-        cmd.append(url)
+        cmd.extend(["--", url])
 
-        res = await self._runner(cmd, cwd=workdir, timeout_s=self._download_timeout_s)
+        res = await self._runner(cmd, cwd=workdir, timeout_s=self._effective_timeout())
         if res.returncode != 0:
             raise _ToolFailed(
                 f"gallery-dl rc={res.returncode}: {res.stderr[:_STDERR_PEEK]}",
             )
 
-        entries = _parse_gallery_dl_stdout(res.stdout)
-        items: list[MediaItem] = []
-        for meta in entries:
-            path = _resolve_gallery_dl_file(meta, workdir)
-            if path is None:
-                continue
-            ext_raw = meta.get("extension")
-            ext = ext_raw if isinstance(ext_raw, str) and ext_raw else path.suffix.lstrip(".")
-            kind, mime = _kind_for_ext(ext)
-            width = _coerce_int(meta.get("width"))
-            height = _coerce_int(meta.get("height"))
-            duration = _coerce_int(meta.get("duration"))
-            if kind == "video" and self._probe_video_dims and (
-                width is None or height is None or duration is None
-            ):
-                probed = await _ffprobe_dims(path, runner=self._runner)
-                if probed:
-                    width = width if width is not None else probed.get("width")
-                    height = height if height is not None else probed.get("height")
-                    duration = (
-                        duration if duration is not None else probed.get("duration_s")
-                    )
-            items.append(
-                MediaItem(
-                    path=path,
-                    kind=kind,
-                    width=width,
-                    height=height,
-                    duration_s=duration,
-                    mime=mime,
-                ),
-            )
-
+        items = await self._collect_items(workdir)
         if not items:
             raise _ToolFailed("gallery-dl yielded zero items")
         return items
@@ -380,44 +275,54 @@ class InstagramProvider:
     async def _run_yt_dlp(self, url: str, workdir: Path) -> list[MediaItem]:
         cmd: list[str] = [
             "yt-dlp",
+            "--ignore-config",
             "-o",
             f"{workdir}/%(id)s.%(ext)s",
-            "--print-json",
             "--no-progress",
             "--no-warnings",
-            url,
+            "--write-info-json",
         ]
         cookies = self._effective_cookies()
         if cookies is not None:
             cmd.extend(["--cookies", str(cookies)])
+        cmd.extend(["--", url])
 
-        res = await self._runner(cmd, cwd=workdir, timeout_s=self._download_timeout_s)
+        res = await self._runner(cmd, cwd=workdir, timeout_s=self._effective_timeout())
         if res.returncode != 0:
             raise _ToolFailed(
                 f"yt-dlp rc={res.returncode}: {res.stderr[:_STDERR_PEEK]}",
             )
 
+        items = await self._collect_items(workdir)
+        if not items:
+            raise _ToolFailed("yt-dlp yielded zero items")
+        return items
+
+    async def _collect_items(self, workdir: Path) -> list[MediaItem]:
+        media_paths: list[Path] = []
+        for p in workdir.rglob("*"):
+            if not p.is_file():
+                continue
+            if p.name.startswith("."):
+                continue
+            if p.suffix.lstrip(".").lower() not in _MEDIA_EXTS:
+                continue
+            media_paths.append(p)
+        media_paths.sort(key=lambda x: (len(x.parts), str(x)))
+
         items: list[MediaItem] = []
-        text = res.stdout.decode("utf-8", errors="replace")
-        for line in text.splitlines():
-            line_stripped = line.strip()
-            if not line_stripped:
+        for path in media_paths:
+            match = _safe_under(workdir, path)
+            if match is None:
                 continue
-            try:
-                meta = json.loads(line_stripped)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(meta, dict):
-                continue
-            path = _resolve_yt_dlp_file(meta, workdir)
-            if path is None:
-                continue
-            ext_raw = meta.get("ext")
-            ext = ext_raw if isinstance(ext_raw, str) and ext_raw else path.suffix.lstrip(".")
+            ext = path.suffix.lstrip(".")
             kind, mime = _kind_for_ext(ext)
+
+            meta = _read_sidecar(path)
             width = _coerce_int(meta.get("width"))
             height = _coerce_int(meta.get("height"))
             duration = _coerce_int(meta.get("duration"))
+
             if kind == "video" and self._probe_video_dims and (
                 width is None or height is None or duration is None
             ):
@@ -428,9 +333,10 @@ class InstagramProvider:
                     duration = (
                         duration if duration is not None else probed.get("duration_s")
                     )
+
             items.append(
                 MediaItem(
-                    path=path,
+                    path=match,
                     kind=kind,
                     width=width,
                     height=height,
@@ -438,9 +344,6 @@ class InstagramProvider:
                     mime=mime,
                 ),
             )
-
-        if not items:
-            raise _ToolFailed("yt-dlp yielded zero items")
         return items
 
     def _enforce_size(self, path: Path) -> None:
@@ -467,6 +370,17 @@ class InstagramProvider:
             return int(env_value) * 1024 * 1024
         except ValueError:
             return None
+
+    def _effective_timeout(self) -> float:
+        if self._download_timeout_s is not None:
+            return self._download_timeout_s
+        env_value = os.environ.get("YOINK_DOWNLOAD_TIMEOUT_S")
+        if env_value:
+            try:
+                return float(env_value)
+            except ValueError:
+                pass
+        return _DEFAULT_DOWNLOAD_TIMEOUT_S
 
 
 provider = InstagramProvider()

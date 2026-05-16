@@ -46,7 +46,6 @@ async def _run() -> int:
     )
 
     dp["pipeline"] = pipeline
-    dp["rate_limiter"] = rate_limiter
     dp["settings"] = settings
     dp["cache"] = cache
 

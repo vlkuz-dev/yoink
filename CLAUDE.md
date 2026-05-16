@@ -29,7 +29,7 @@ re-uploads the media inline. Single process, stateless apart from a SQLite
 ## How to run locally
 
 ```bash
-uv venv --python 3.12
+uv venv --python 3.11
 source .venv/bin/activate
 uv pip install -e ".[dev]"
 cp .env.example .env  # set YOINK_BOT_TOKEN

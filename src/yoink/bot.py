@@ -6,7 +6,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 
 from yoink.handlers import register_routers
-from yoink.middleware import LoggingMiddleware, RateLimitMiddleware
+from yoink.middleware import LoggingMiddleware
 
 if TYPE_CHECKING:
     from yoink.config import Settings
@@ -20,7 +20,6 @@ def build_bot(settings: Settings) -> tuple[Bot, Dispatcher]:
     dp = Dispatcher()
 
     dp.update.outer_middleware(LoggingMiddleware())
-    dp.message.middleware(RateLimitMiddleware())
 
     register_routers(dp)
     return bot, dp
