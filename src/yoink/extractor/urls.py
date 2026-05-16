@@ -68,7 +68,8 @@ def extract_urls(message: Message) -> list[str]:
     text = message.text or message.caption or ""
     entities = list(message.entities or message.caption_entities or [])
 
-    raw: list[str] = _from_entities(text, entities) if entities else _regex_fallback(text)
+    raw: list[str] = _from_entities(text, entities) if entities else []
+    raw.extend(_regex_fallback(text))
 
     seen: set[str] = set()
     out: list[str] = []

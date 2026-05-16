@@ -20,9 +20,10 @@ re-uploads the media inline. Single process, stateless apart from a SQLite
   which wraps `asyncio.create_subprocess_exec`.
 - New external URLs that the bot fetches must pass `downloader.safety.validate_url`
   (rejects private IP ranges, non-`http(s)`, userinfo, off-list ports).
-- Aiogram 3.x dependency injection: shared services (`pipeline`, `rate_limiter`,
-  `settings`, `cache`) live on `Dispatcher.workflow_data`. Handlers take them
-  as kwargs by name — do not import singletons.
+- Aiogram 3.x dependency injection: shared services (`pipeline`, `settings`,
+  `cache`) live on `Dispatcher.workflow_data`. Handlers take them as kwargs
+  by name — do not import singletons. Rate limiting is enforced inside
+  `Pipeline.submit`, not as a middleware.
 - Tests live under `tests/unit` and `tests/integration`. `pytest-asyncio` is in
   `asyncio_mode = "auto"`. `filterwarnings = ["error"]` — warnings break the build.
 
@@ -86,5 +87,5 @@ When testing a provider:
 - `src/yoink/cache/store.py` — `aiosqlite` `file_id` cache, WAL mode, lock-guarded writes.
 - `src/yoink/downloader/safety.py` — URL validation, filename sanitization.
 - `src/yoink/uploader/telegram.py` — single / album / chunked uploads, retry-after handling.
-- `src/yoink/middleware.py` — correlation id + rate-limit middleware.
+- `src/yoink/middleware.py` — correlation id middleware (rate limiting lives in `Pipeline.submit`).
 - `src/yoink/admin/commands.py` — `/ping`, `/stats`, `/flush_cache` (admin-gated, silent for non-admins).

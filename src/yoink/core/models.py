@@ -23,7 +23,6 @@ class MediaPackage:
     provider: str
     items: list[MediaItem]
     caption: str | None = None
-    nsfw: bool = False
 
 
 @dataclass(slots=True, kw_only=True)

@@ -146,11 +146,11 @@ Drop a test under `tests/unit/test_tiktok_provider.py` mocking
 - **Extractor drift.** `gallery-dl` and `yt-dlp` track moving targets.
   Pin versions in the Dockerfile and rebuild regularly; structured logs
   surface tool versions on failure.
-- **SSRF via redirects.** The initial URL is validated against private
-  IP ranges and (optionally) an allowlist, but redirects inside
-  `gallery-dl` / `yt-dlp` are not intercepted — neither tool exposes
-  per-request IP pinning. Enable `YOINK_ALLOWLIST_MODE=true` to bound
-  reachable hosts.
+- **SSRF via redirects.** The initial URL is validated for scheme,
+  userinfo, port, literal-IP private ranges, and (optionally) an
+  allowlist before queueing. Redirects inside `gallery-dl` / `yt-dlp`
+  are not intercepted — neither tool exposes per-request IP pinning.
+  Enable `YOINK_ALLOWLIST_MODE=true` to bound reachable hosts.
 - **In-process queue.** Jobs live in `asyncio.Queue`; a hard kill drops
   in-flight links. Users can repost. Swap to `arq` + Redis if horizontal
   scale or durability is needed (queue boundary is stable).
@@ -158,8 +158,8 @@ Drop a test under `tests/unit/test_tiktok_provider.py` mocking
   removed in `finally`, but a SIGKILL leaves them behind. Startup sweeps
   all job subdirs and preserves `.heartbeat`.
 - **Stale `file_id` cache.** Telegram may invalidate cached `file_id`s
-  over long horizons. Currently accepted as residual risk; future work
-  is to purge on upload failure and re-fetch.
+  over long horizons. The pipeline detects stale-id errors on cached
+  resends, evicts the cache entry, and re-fetches from source.
 - **NSFW / illegal content.** Out of scope. The bot mirrors whatever the
   source returns; operate on chats you control.
 - **Token / cookie leakage.** Structured-log processors strip

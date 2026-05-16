@@ -105,10 +105,20 @@ class TestExtractUrlsRegexFallback:
     def test_no_urls(self) -> None:
         assert extract_urls(_msg(text="just some words")) == []
 
-    def test_entities_take_precedence_over_regex(self) -> None:
+    def test_entities_merge_with_regex_fallback(self) -> None:
         text = "https://a.com/x and https://b.com/y"
         ents = [_ent("url", 0, 15)]
-        assert extract_urls(_msg(text=text, entities=ents)) == ["https://a.com/x"]
+        assert extract_urls(_msg(text=text, entities=ents)) == [
+            "https://a.com/x",
+            "https://b.com/y",
+        ]
+
+    def test_plaintext_url_extracted_when_non_url_entity_present(self) -> None:
+        text = "@bot check https://www.instagram.com/p/abc/"
+        ents = [_ent("mention", 0, 4)]
+        assert extract_urls(_msg(text=text, entities=ents)) == [
+            "https://www.instagram.com/p/abc/",
+        ]
 
 
 class TestExtractUrlsCaption:

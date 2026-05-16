@@ -7,14 +7,13 @@ import secrets
 import shutil
 import time
 from typing import TYPE_CHECKING, TypeVar
-from urllib.parse import urlsplit
 
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 
 from yoink.cache.store import hash_url
 from yoink.core.errors import MediaTooLarge, ProviderError, ProviderTransientError
 from yoink.core.models import Job
-from yoink.downloader.safety import host_in_allowlist
+from yoink.downloader.safety import UnsafeURLError, validate_url
 from yoink.extractor.urls import extract_urls
 from yoink.log import get_logger
 
@@ -146,8 +145,10 @@ class Pipeline:
 
         urls = extract_urls(message)
         for url in urls:
-            if self._allowlist is not None and not self._url_in_allowlist(url):
-                _log.info("allowlist_blocked", url=url, chat_id=chat_id)
+            try:
+                validate_url(url, allowlist=self._allowlist, resolve_dns=False)
+            except UnsafeURLError as exc:
+                _log.info("url_rejected", url=url, chat_id=chat_id, reason=str(exc))
                 continue
             provider = self._registry.find(url)
             if provider is None:
@@ -335,21 +336,10 @@ class Pipeline:
             _log.exception("heartbeat_write_failed", path=str(path))
 
     async def _heartbeat_loop(self) -> None:
-        try:
-            while True:
-                self._touch_heartbeat()
-                await asyncio.sleep(self._heartbeat_interval_s)
-        except asyncio.CancelledError:
-            raise
+        while True:
+            self._touch_heartbeat()
+            await asyncio.sleep(self._heartbeat_interval_s)
 
     async def join(self) -> None:
         """Wait until all enqueued jobs are processed (test helper)."""
         await self._queue.join()
-
-    def _url_in_allowlist(self, url: str) -> bool:
-        if self._allowlist is None:
-            return True
-        host = urlsplit(url).hostname
-        if not host:
-            return False
-        return host_in_allowlist(host, self._allowlist)

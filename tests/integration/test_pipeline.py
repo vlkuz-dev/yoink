@@ -405,6 +405,28 @@ async def test_pipeline_writes_heartbeat(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_pipeline_rejects_unsafe_url(tmp_path: Path) -> None:
+    provider = FakeProvider(media_root=tmp_path)
+    uploader = FakeUploader()
+    pipeline, cache, _ = await _build_pipeline(
+        tmp_path, provider=provider, uploader=uploader, workers=1,
+    )
+    try:
+        # literal private-range IP — must be rejected before provider lookup
+        await pipeline.submit(_make_message("http://127.0.0.1/p/abc"))
+        # userinfo in URL — rejected
+        await pipeline.submit(_make_message("https://user:pwd@www.instagram.com/p/abc"))
+        # non-standard port — rejected
+        await pipeline.submit(_make_message("https://www.instagram.com:8443/p/abc"))
+        await pipeline.join()
+        assert provider.fetch_calls == []
+        assert uploader.sends == []
+    finally:
+        await pipeline.stop()
+        await cache.close()
+
+
+@pytest.mark.asyncio
 async def test_pipeline_rate_limit_drops_url(tmp_path: Path) -> None:
     provider = FakeProvider(media_root=tmp_path)
     uploader = FakeUploader()

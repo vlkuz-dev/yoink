@@ -93,6 +93,7 @@ def validate_url(
     *,
     allowed_ports: frozenset[int] = _DEFAULT_ALLOWED_PORTS,
     resolver: Resolver | None = None,
+    resolve_dns: bool = True,
 ) -> ValidatedURL:
     if not isinstance(url, str) or not url:
         raise UnsafeURLError("empty or non-string URL")
@@ -126,6 +127,8 @@ def validate_url(
         if _is_unsafe_ip(literal_ip):
             raise UnsafeURLError(f"literal IP host in unsafe range: {host}")
         resolved = (str(literal_ip),)
+    elif not resolve_dns:
+        resolved = ()
     else:
         resolve = resolver if resolver is not None else _default_resolver
         try:
