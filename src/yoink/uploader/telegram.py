@@ -89,6 +89,13 @@ def _chunks(
     return [seq[i : i + size] for i in range(0, len(seq), size)]
 
 
+def _chunks_cached(
+    seq: list[tuple[int, CachedFile]],
+    size: int,
+) -> list[list[tuple[int, CachedFile]]]:
+    return [seq[i : i + size] for i in range(0, len(seq), size)]
+
+
 def _path_for(item: MediaItem | None) -> Path | None:
     return item.path if item is not None else None
 
@@ -168,6 +175,176 @@ class TelegramUploader:
             )
 
         return [out[i] for i in range(len(items))]
+
+    async def send_cached(
+        self,
+        *,
+        chat_id: int,
+        reply_to: int | None,
+        files: list[CachedFile],
+        caption: str | None = None,
+    ) -> list[CachedFile]:
+        """Re-send previously cached file_ids without uploading bytes.
+
+        Mirrors `send()`'s grouping rules: photos/videos may share a
+        media_group (chunked at 10); animations/documents go solo. Returns
+        the input list (file_ids round-trip unchanged).
+        """
+        if not files:
+            return []
+
+        groupable_idx: list[tuple[int, CachedFile]] = [
+            (i, f) for i, f in enumerate(files) if f.kind in _GROUPABLE
+        ]
+        singular_idx: list[tuple[int, CachedFile]] = [
+            (i, f) for i, f in enumerate(files) if f.kind not in _GROUPABLE
+        ]
+
+        caption_used = False
+
+        if len(groupable_idx) >= 2:
+            caption_used = await self._send_cached_group(
+                chat_id=chat_id,
+                reply_to=reply_to,
+                groupable=groupable_idx,
+                caption=caption,
+            )
+        elif len(groupable_idx) == 1:
+            _, file = groupable_idx[0]
+            effective_caption = caption if not caption_used else None
+            await self._send_cached_single(
+                chat_id=chat_id,
+                reply_to=reply_to,
+                file=file,
+                caption=effective_caption,
+            )
+            if effective_caption is not None:
+                caption_used = True
+
+        singular_reply = reply_to if not groupable_idx else None
+        for _, file in singular_idx:
+            effective_caption = caption if not caption_used else None
+            await self._send_cached_single(
+                chat_id=chat_id,
+                reply_to=singular_reply,
+                file=file,
+                caption=effective_caption,
+            )
+            if effective_caption is not None:
+                caption_used = True
+            singular_reply = None
+
+        return list(files)
+
+    async def _send_cached_group(
+        self,
+        *,
+        chat_id: int,
+        reply_to: int | None,
+        groupable: list[tuple[int, CachedFile]],
+        caption: str | None,
+    ) -> bool:
+        caption_used = False
+        for chunk_idx, chunk in enumerate(_chunks_cached(groupable, _MEDIA_GROUP_MAX)):
+            media_list: list[
+                InputMediaAudio
+                | InputMediaDocument
+                | InputMediaLivePhoto
+                | InputMediaPhoto
+                | InputMediaVideo
+            ] = []
+            for slot_idx, (_, file) in enumerate(chunk):
+                want_caption = (
+                    chunk_idx == 0
+                    and slot_idx == 0
+                    and not caption_used
+                    and caption is not None
+                )
+                cap = caption if want_caption else None
+                if want_caption:
+                    caption_used = True
+                if file.kind == "photo":
+                    media_list.append(InputMediaPhoto(media=file.file_id, caption=cap))
+                else:
+                    media_list.append(InputMediaVideo(media=file.file_id, caption=cap))
+            chunk_reply = reply_to if chunk_idx == 0 else None
+
+            async def factory(
+                _media: list[
+                    InputMediaAudio
+                    | InputMediaDocument
+                    | InputMediaLivePhoto
+                    | InputMediaPhoto
+                    | InputMediaVideo
+                ] = media_list,
+                _reply: int | None = chunk_reply,
+            ) -> list[Message]:
+                return await self._bot.send_media_group(
+                    chat_id=chat_id,
+                    media=_media,
+                    reply_to_message_id=_reply,
+                )
+
+            await self._call_with_retry(factory, fallback_item=None)
+        return caption_used
+
+    async def _send_cached_single(
+        self,
+        *,
+        chat_id: int,
+        reply_to: int | None,
+        file: CachedFile,
+        caption: str | None,
+    ) -> None:
+        kind = file.kind
+        file_id = file.file_id
+
+        if kind == "photo":
+            async def photo_factory() -> Message:
+                return await self._bot.send_photo(
+                    chat_id=chat_id,
+                    photo=file_id,
+                    caption=caption,
+                    reply_to_message_id=reply_to,
+                )
+
+            await self._call_with_retry(photo_factory, fallback_item=None)
+            return
+
+        if kind == "video":
+            async def video_factory() -> Message:
+                return await self._bot.send_video(
+                    chat_id=chat_id,
+                    video=file_id,
+                    caption=caption,
+                    supports_streaming=True,
+                    reply_to_message_id=reply_to,
+                )
+
+            await self._call_with_retry(video_factory, fallback_item=None)
+            return
+
+        if kind == "animation":
+            async def animation_factory() -> Message:
+                return await self._bot.send_animation(
+                    chat_id=chat_id,
+                    animation=file_id,
+                    caption=caption,
+                    reply_to_message_id=reply_to,
+                )
+
+            await self._call_with_retry(animation_factory, fallback_item=None)
+            return
+
+        async def document_factory() -> Message:
+            return await self._bot.send_document(
+                chat_id=chat_id,
+                document=file_id,
+                caption=caption,
+                reply_to_message_id=reply_to,
+            )
+
+        await self._call_with_retry(document_factory, fallback_item=None)
 
     async def _send_group(
         self,

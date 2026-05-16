@@ -425,14 +425,14 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Create: `tests/integration/test_pipeline.py`
 - Create: `tests/__init__.py` (if needed)
 
-- [ ] `Pipeline` wires registry + cache + rate_limiter + uploader + `asyncio.Queue(maxsize=...)` + N worker tasks
-- [ ] `submit(message)`: extract URLs, normalize, hash, for each: check rate limiter, check cache (hit → upload `file_id` directly via uploader, skipping queue), miss → `queue.put_nowait(Job)` (catch `QueueFull` → log + drop, no user-facing reply)
-- [ ] `_worker()`: loop `queue.get` → create unique workdir under `YOINK_WORKDIR/<correlation_id>/` → `provider.fetch` → `uploader.send` → `cache.put` → `shutil.rmtree(workdir)` (in `finally`); catch + log all `ProviderError` / `MediaTooLarge` / `TelegramBadRequest` — never propagate (worker must not die)
-- [ ] `start()`: spawn N workers as `asyncio.Task`; `stop()`: cancel + await all, drain queue
-- [ ] retry policy: hand-rolled `async def retry_async(fn, *, attempts=3, base=1.0, factor=4.0, retry_on=(ProviderTransientError,))` helper in `core/pipeline.py` (no extra dep). Wrap provider fetch — 2 retries (3 total attempts), backoff 1s then 4s; only `ProviderTransientError` (rate-limited / network) triggers retry; permanent errors (404, geo-blocked, `ProviderError`) re-raise immediately
-- [ ] tests for `retry_async`: success on first try (no sleep), success after 2 transient failures (mock `asyncio.sleep`), exhausts retries then re-raises, permanent error not retried
-- [ ] integration test: full pipeline with fake provider returning fixture file, mock Bot — sending a known URL twice → second call uses cache (no provider.fetch call); unknown URL silently skipped; provider error logged, worker survives, next job processes
-- [ ] run `pytest -q` — must pass before Task 11
+- [x] `Pipeline` wires registry + cache + rate_limiter + uploader + `asyncio.Queue(maxsize=...)` + N worker tasks
+- [x] `submit(message)`: extract URLs, normalize, hash, for each: check rate limiter, check cache (hit → upload `file_id` directly via uploader, skipping queue), miss → `queue.put_nowait(Job)` (catch `QueueFull` → log + drop, no user-facing reply)
+- [x] `_worker()`: loop `queue.get` → create unique workdir under `YOINK_WORKDIR/<correlation_id>/` → `provider.fetch` → `uploader.send` → `cache.put` → `shutil.rmtree(workdir)` (in `finally`); catch + log all `ProviderError` / `MediaTooLarge` / `TelegramBadRequest` — never propagate (worker must not die)
+- [x] `start()`: spawn N workers as `asyncio.Task`; `stop()`: cancel + await all, drain queue
+- [x] retry policy: hand-rolled `async def retry_async(fn, *, attempts=3, base=1.0, factor=4.0, retry_on=(ProviderTransientError,))` helper in `core/pipeline.py` (no extra dep). Wrap provider fetch — 2 retries (3 total attempts), backoff 1s then 4s; only `ProviderTransientError` (rate-limited / network) triggers retry; permanent errors (404, geo-blocked, `ProviderError`) re-raise immediately
+- [x] tests for `retry_async`: success on first try (no sleep), success after 2 transient failures (mock `asyncio.sleep`), exhausts retries then re-raises, permanent error not retried
+- [x] integration test: full pipeline with fake provider returning fixture file, mock Bot — sending a known URL twice → second call uses cache (no provider.fetch call); unknown URL silently skipped; provider error logged, worker survives, next job processes
+- [x] run `pytest -q` — must pass before Task 11
 
 ### Task 11: aiogram bot wiring + handlers + middleware
 
