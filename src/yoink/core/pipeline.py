@@ -9,7 +9,7 @@ import time
 from typing import TYPE_CHECKING, TypeVar
 from urllib.parse import urlsplit
 
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 
 from yoink.cache.store import hash_url
 from yoink.core.errors import MediaTooLarge, ProviderError, ProviderTransientError
@@ -24,12 +24,27 @@ if TYPE_CHECKING:
 
     from aiogram.types import Message
 
-    from yoink.cache.store import FileIdCache
+    from yoink.cache.store import CachedFile, FileIdCache
     from yoink.core.rate_limiter import TokenBucketLimiter
     from yoink.core.registry import ProviderRegistry
     from yoink.uploader.telegram import TelegramUploader
 
     SleepFn = Callable[[float], Awaitable[None]]
+
+
+_STALE_FILE_ID_PHRASES: tuple[str, ...] = (
+    "wrong file identifier",
+    "wrong file_id",
+    "file_id is invalid",
+    "wrong type of file",
+    "file reference expired",
+    "wrong remote file identifier",
+)
+
+
+def _is_stale_file_id(exc: TelegramBadRequest) -> bool:
+    text = (exc.message or str(exc)).lower()
+    return any(phrase in text for phrase in _STALE_FILE_ID_PHRASES)
 
 
 T = TypeVar("T")
@@ -142,15 +157,13 @@ class Pipeline:
                 continue
             url_hash = hash_url(url)
             cached = await self._cache.get(url_hash)
-            if cached:
-                try:
-                    await self._uploader.send_cached(
-                        chat_id=chat_id,
-                        reply_to=reply_to,
-                        files=cached,
-                    )
-                except (TelegramBadRequest, MediaTooLarge):
-                    _log.exception("cache_resend_failed", url=url, chat_id=chat_id)
+            if cached and await self._serve_cached(
+                chat_id=chat_id,
+                reply_to=reply_to,
+                url=url,
+                url_hash=url_hash,
+                cached=cached,
+            ):
                 continue
             job = Job(
                 chat_id=chat_id,
@@ -163,6 +176,45 @@ class Pipeline:
                 self._queue.put_nowait(job)
             except asyncio.QueueFull:
                 _log.warning("queue_full_drop", url=url, chat_id=chat_id)
+
+    async def _serve_cached(
+        self,
+        *,
+        chat_id: int,
+        reply_to: int | None,
+        url: str,
+        url_hash: str,
+        cached: list[CachedFile],
+    ) -> bool:
+        """Re-send cached file_ids. Returns True if request handled; False
+        means the cache entry was stale and the caller should enqueue a
+        fresh fetch.
+        """
+        try:
+            await self._uploader.send_cached(
+                chat_id=chat_id,
+                reply_to=reply_to,
+                files=cached,
+            )
+        except TelegramBadRequest as exc:
+            if _is_stale_file_id(exc):
+                await self._cache.delete(url_hash)
+                _log.info(
+                    "cache_invalidated_stale_file_id",
+                    url=url,
+                    chat_id=chat_id,
+                    detail=exc.message,
+                )
+                return False
+            _log.exception("cache_resend_failed", url=url, chat_id=chat_id)
+            return True
+        except MediaTooLarge:
+            _log.exception("cache_resend_too_large", url=url, chat_id=chat_id)
+            return True
+        except TelegramAPIError:
+            _log.exception("cache_resend_api_error", url=url, chat_id=chat_id)
+            return True
+        return True
 
     async def _worker(self, worker_id: int) -> None:
         while True:

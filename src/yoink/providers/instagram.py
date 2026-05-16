@@ -261,7 +261,11 @@ class InstagramProvider:
             cmd.extend(["--cookies", str(cookies)])
         cmd.extend(["--", url])
 
-        res = await self._runner(cmd, cwd=workdir, timeout_s=self._effective_timeout())
+        timeout = self._effective_timeout()
+        try:
+            res = await self._runner(cmd, cwd=workdir, timeout_s=timeout)
+        except SubprocessTimeoutError as exc:
+            raise _ToolFailed(f"gallery-dl timeout after {timeout}s") from exc
         if res.returncode != 0:
             raise _ToolFailed(
                 f"gallery-dl rc={res.returncode}: {res.stderr[:_STDERR_PEEK]}",
@@ -287,7 +291,11 @@ class InstagramProvider:
             cmd.extend(["--cookies", str(cookies)])
         cmd.extend(["--", url])
 
-        res = await self._runner(cmd, cwd=workdir, timeout_s=self._effective_timeout())
+        timeout = self._effective_timeout()
+        try:
+            res = await self._runner(cmd, cwd=workdir, timeout_s=timeout)
+        except SubprocessTimeoutError as exc:
+            raise _ToolFailed(f"yt-dlp timeout after {timeout}s") from exc
         if res.returncode != 0:
             raise _ToolFailed(
                 f"yt-dlp rc={res.returncode}: {res.stderr[:_STDERR_PEEK]}",

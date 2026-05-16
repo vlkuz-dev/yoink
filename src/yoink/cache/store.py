@@ -121,6 +121,21 @@ class FileIdCache:
                 )
             await conn.commit()
 
+    async def delete(self, url_hash: str) -> bool:
+        conn = self._require_conn()
+        async with self._write_lock:
+            cursor = await conn.execute(
+                "DELETE FROM cached_url WHERE url_hash = ?",
+                (url_hash,),
+            )
+            removed = cursor.rowcount
+            await conn.execute(
+                "DELETE FROM cached_file WHERE url_hash = ?",
+                (url_hash,),
+            )
+            await conn.commit()
+        return bool(removed)
+
     async def flush(self) -> int:
         conn = self._require_conn()
         async with self._write_lock:
