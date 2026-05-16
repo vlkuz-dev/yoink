@@ -443,13 +443,13 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Modify: `src/yoink/__main__.py`
 - Create: `tests/unit/test_handlers.py`
 
-- [ ] `bot.py`: `build_bot(settings) -> tuple[Bot, Dispatcher]` — creates `Bot(token, default=DefaultBotProperties(parse_mode=None))` and `Dispatcher()`, attaches middleware
-- [ ] **DI for handlers (aiogram 3.x pattern)**: store shared services on the dispatcher's workflow data — `dp["pipeline"] = pipeline; dp["rate_limiter"] = rate_limiter; dp["settings"] = settings`. Handlers receive them as kwargs because aiogram 3 injects matching names from `Dispatcher.workflow_data` automatically: `async def handle_message(message: Message, pipeline: Pipeline, settings: Settings) -> None: ...`
-- [ ] `middleware.py`: `LoggingMiddleware` attaches `correlation_id` to `data["correlation_id"]`; `RateLimitMiddleware.__call__(handler, event, data)` calls `data["rate_limiter"].try_acquire(event.chat.id)` — **if denied, return `None` (do not call `await handler(event, data)`)** so the chain aborts silently with no reply
-- [ ] `handlers.py`: register message handler for any text (`F.text | F.caption`) that calls `pipeline.submit(message)`; register admin commands (Task 12 stub for now)
-- [ ] `__main__.py`: build settings, logger, cache (await init), registry (autodiscover), uploader, rate_limiter, pipeline (await start), bot + dp; populate `dp` workflow data; run `dp.start_polling(bot)` with graceful shutdown on SIGTERM/SIGINT (cancel pipeline → close bot session → close cache)
-- [ ] write tests: handler calls `pipeline.submit` once per message; middleware returns without invoking handler when limiter denies (assert handler mock not called); middleware injects correlation_id into `data`
-- [ ] run `pytest -q` — must pass before Task 12
+- [x] `bot.py`: `build_bot(settings) -> tuple[Bot, Dispatcher]` — creates `Bot(token, default=DefaultBotProperties(parse_mode=None))` and `Dispatcher()`, attaches middleware
+- [x] **DI for handlers (aiogram 3.x pattern)**: store shared services on the dispatcher's workflow data — `dp["pipeline"] = pipeline; dp["rate_limiter"] = rate_limiter; dp["settings"] = settings`. Handlers receive them as kwargs because aiogram 3 injects matching names from `Dispatcher.workflow_data` automatically: `async def handle_message(message: Message, pipeline: Pipeline, settings: Settings) -> None: ...`
+- [x] `middleware.py`: `LoggingMiddleware` attaches `correlation_id` to `data["correlation_id"]`; `RateLimitMiddleware.__call__(handler, event, data)` calls `data["rate_limiter"].try_acquire(event.chat.id)` — **if denied, return `None` (do not call `await handler(event, data)`)** so the chain aborts silently with no reply
+- [x] `handlers.py`: register message handler for any text (`F.text | F.caption`) that calls `pipeline.submit(message)`; register admin commands (Task 12 stub for now)
+- [x] `__main__.py`: build settings, logger, cache (await init), registry (autodiscover), uploader, rate_limiter, pipeline (await start), bot + dp; populate `dp` workflow data; run `dp.start_polling(bot)` with graceful shutdown on SIGTERM/SIGINT (cancel pipeline → close bot session → close cache)
+- [x] write tests: handler calls `pipeline.submit` once per message; middleware returns without invoking handler when limiter denies (assert handler mock not called); middleware injects correlation_id into `data`
+- [x] run `pytest -q` — must pass before Task 12
 
 ### Task 12: Admin commands + allowlist mode wiring
 
