@@ -291,13 +291,13 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Create: `.gitignore`
 - Create: `README.md` (stub)
 
-- [ ] create `pyproject.toml` with deps (aiogram, aiosqlite, structlog, pydantic-settings, httpx, orjson) and dev deps (pytest, pytest-asyncio, pytest-mock, ruff, mypy)
-- [ ] configure ruff (line-length 120, target py311, select E/F/I/B/UP/SIM/N/RUF) and mypy strict in `pyproject.toml`
-- [ ] create `src/yoink/config.py` with `Settings(BaseSettings)` — all env vars from the table above, prefix `YOINK_`
-- [ ] create `src/yoink/log.py` exposing `configure_logging(level, format)` + `get_logger(name)`
-- [ ] create `src/yoink/__main__.py` skeleton that loads settings, configures logging, prints "yoink starting" and exits 0
-- [ ] write tests for `Settings`: defaults applied, required fields raise, comma-separated `ADMIN_IDS` parses to `frozenset[int]`
-- [ ] run `pytest -q && ruff check && mypy src` — must pass before Task 2
+- [x] create `pyproject.toml` with deps (aiogram, aiosqlite, structlog, pydantic-settings, httpx, orjson) and dev deps (pytest, pytest-asyncio, pytest-mock, ruff, mypy)
+- [x] configure ruff (line-length 120, target py311, select E/F/I/B/UP/SIM/N/RUF) and mypy strict in `pyproject.toml`
+- [x] create `src/yoink/config.py` with `Settings(BaseSettings)` — all env vars from the table above, prefix `YOINK_`
+- [x] create `src/yoink/log.py` exposing `configure_logging(level, format)` + `get_logger(name)`
+- [x] create `src/yoink/__main__.py` skeleton that loads settings, configures logging, prints "yoink starting" and exits 0
+- [x] write tests for `Settings`: defaults applied, required fields raise, comma-separated `ADMIN_IDS` parses to `frozenset[int]`
+- [x] run `pytest -q && ruff check && mypy src` — must pass before Task 2
 
 ### Task 2: Core models + URL extractor
 
