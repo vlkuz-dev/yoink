@@ -24,6 +24,10 @@ class ProviderRegistry:
         for domain in provider.domains:
             self._by_domain[_normalize_host(domain)] = provider
 
+    @property
+    def known_domains(self) -> frozenset[str]:
+        return frozenset(self._by_domain.keys())
+
     def find(self, url: str) -> Provider | None:
         host = urlsplit(url).hostname
         if not host:

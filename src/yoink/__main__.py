@@ -33,6 +33,7 @@ async def _run() -> int:
     rate_limiter = TokenBucketLimiter(rate_per_min=settings.rate_per_chat_per_min)
     bot, dp = build_bot(settings)
     uploader = TelegramUploader(bot)
+    allowlist = registry.known_domains if settings.allowlist_mode else None
     pipeline = Pipeline(
         registry=registry,
         cache=cache,
@@ -41,6 +42,7 @@ async def _run() -> int:
         workdir_root=settings.workdir,
         workers=settings.workers,
         queue_maxsize=settings.queue_maxsize,
+        allowlist=allowlist,
     )
 
     dp["pipeline"] = pipeline

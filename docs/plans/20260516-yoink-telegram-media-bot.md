@@ -460,12 +460,12 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Modify: `src/yoink/core/pipeline.py` (allowlist enforcement)
 - Create: `tests/unit/test_admin.py`
 
-- [ ] `is_admin(user_id, settings) -> bool` checks `settings.admin_ids`
-- [ ] `/ping`, `/stats` (cache stats + queue depth + worker count), `/flush_cache` — all gated by `is_admin`; non-admin: silent (no reply)
-- [ ] register admin routes in `handlers.py` using `aiogram.filters.Command` + `F.from_user.id.in_(admin_ids)`
-- [ ] allowlist mode: when `settings.allowlist_mode=true`, `pipeline.submit` filters URLs through `validate_url(url, allowlist=settings.allowed_domains)`; allowed domains derived from union of `provider.domains` across registry
-- [ ] write tests: admin `/stats` returns counts; non-admin gets no reply; allowlist mode rejects unknown domain; allowlist off lets everything through to provider lookup
-- [ ] run `pytest -q` — must pass before Task 13
+- [x] `is_admin(user_id, settings) -> bool` checks `settings.admin_ids`
+- [x] `/ping`, `/stats` (cache stats + queue depth + worker count), `/flush_cache` — all gated by `is_admin`; non-admin: silent (no reply)
+- [x] register admin routes in `handlers.py` using `aiogram.filters.Command` + `F.from_user.id.in_(admin_ids)`
+- [x] allowlist mode: when `settings.allowlist_mode=true`, `pipeline.submit` filters URLs through `validate_url(url, allowlist=settings.allowed_domains)`; allowed domains derived from union of `provider.domains` across registry
+- [x] write tests: admin `/stats` returns counts; non-admin gets no reply; allowlist mode rejects unknown domain; allowlist off lets everything through to provider lookup
+- [x] run `pytest -q` — must pass before Task 13
 
 ### Task 13: Dockerfile + compose + final wiring
 

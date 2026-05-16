@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 
-from yoink.handlers import build_router
+from yoink.handlers import register_routers
 from yoink.middleware import LoggingMiddleware, RateLimitMiddleware
 
 if TYPE_CHECKING:
@@ -22,5 +22,5 @@ def build_bot(settings: Settings) -> tuple[Bot, Dispatcher]:
     dp.update.outer_middleware(LoggingMiddleware())
     dp.message.middleware(RateLimitMiddleware())
 
-    dp.include_router(build_router())
+    register_routers(dp)
     return bot, dp

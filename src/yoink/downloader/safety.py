@@ -76,7 +76,7 @@ def _is_unsafe_ip(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     return any(addr in net for net in _UNSAFE_V6_NETWORKS)
 
 
-def _host_in_allowlist(host: str, allowlist: frozenset[str]) -> bool:
+def host_in_allowlist(host: str, allowlist: frozenset[str]) -> bool:
     h = host.lower().lstrip(".")
     for entry in allowlist:
         d = entry.lower().lstrip(".")
@@ -117,7 +117,7 @@ def validate_url(
     if port not in allowed_ports:
         raise UnsafeURLError(f"port not allowed: {port}")
 
-    if allowlist is not None and not _host_in_allowlist(host, allowlist):
+    if allowlist is not None and not host_in_allowlist(host, allowlist):
         raise UnsafeURLError(f"host not in allowlist: {host}")
 
     resolved: tuple[str, ...]

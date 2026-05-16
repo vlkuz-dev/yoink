@@ -5,12 +5,14 @@ import contextlib
 import secrets
 import shutil
 from typing import TYPE_CHECKING, TypeVar
+from urllib.parse import urlsplit
 
 from aiogram.exceptions import TelegramBadRequest
 
 from yoink.cache.store import hash_url
 from yoink.core.errors import MediaTooLarge, ProviderError, ProviderTransientError
 from yoink.core.models import Job
+from yoink.downloader.safety import host_in_allowlist
 from yoink.extractor.urls import extract_urls
 from yoink.log import get_logger
 
@@ -87,6 +89,7 @@ class Pipeline:
         retry_base_s: float = 1.0,
         retry_factor: float = 4.0,
         retry_sleep: SleepFn | None = None,
+        allowlist: frozenset[str] | None = None,
     ) -> None:
         if workers < 1:
             raise ValueError("workers must be >= 1")
@@ -102,6 +105,7 @@ class Pipeline:
         self._retry_base_s = retry_base_s
         self._retry_factor = retry_factor
         self._retry_sleep = retry_sleep
+        self._allowlist = allowlist
 
     @property
     def queue_depth(self) -> int:
@@ -122,6 +126,9 @@ class Pipeline:
 
         urls = extract_urls(message)
         for url in urls:
+            if self._allowlist is not None and not self._url_in_allowlist(url):
+                _log.info("allowlist_blocked", url=url, chat_id=chat_id)
+                continue
             provider = self._registry.find(url)
             if provider is None:
                 continue
@@ -230,3 +237,11 @@ class Pipeline:
     async def join(self) -> None:
         """Wait until all enqueued jobs are processed (test helper)."""
         await self._queue.join()
+
+    def _url_in_allowlist(self, url: str) -> bool:
+        if self._allowlist is None:
+            return True
+        host = urlsplit(url).hostname
+        if not host:
+            return False
+        return host_in_allowlist(host, self._allowlist)
