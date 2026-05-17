@@ -9,6 +9,21 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 LogFormat = Literal["json", "console"]
 
 
+def _parse_int_set(v: object, *, field: str) -> frozenset[int]:
+    if v is None or v == "":
+        return frozenset()
+    if isinstance(v, frozenset):
+        return v
+    if isinstance(v, (set, list, tuple)):
+        return frozenset(int(x) for x in v)
+    if isinstance(v, int):
+        return frozenset({v})
+    if isinstance(v, str):
+        parts = [p.strip() for p in v.split(",") if p.strip()]
+        return frozenset(int(p) for p in parts)
+    raise TypeError(f"unsupported type for {field}: {type(v).__name__}")
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="YOINK_",
@@ -30,6 +45,7 @@ class Settings(BaseSettings):
 
     allowlist_mode: bool = True
     admin_ids: Annotated[frozenset[int], NoDecode] = frozenset()
+    chat_allowlist: Annotated[frozenset[int], NoDecode] = frozenset()
 
     cache_db: Path = Path("/data/yoink.sqlite")
     workdir: Path = Path("/tmp/yoink")
@@ -38,18 +54,12 @@ class Settings(BaseSettings):
     @field_validator("admin_ids", mode="before")
     @classmethod
     def _parse_admin_ids(cls, v: object) -> frozenset[int]:
-        if v is None or v == "":
-            return frozenset()
-        if isinstance(v, frozenset):
-            return v
-        if isinstance(v, (set, list, tuple)):
-            return frozenset(int(x) for x in v)
-        if isinstance(v, int):
-            return frozenset({v})
-        if isinstance(v, str):
-            parts = [p.strip() for p in v.split(",") if p.strip()]
-            return frozenset(int(p) for p in parts)
-        raise TypeError(f"unsupported type for admin_ids: {type(v).__name__}")
+        return _parse_int_set(v, field="admin_ids")
+
+    @field_validator("chat_allowlist", mode="before")
+    @classmethod
+    def _parse_chat_allowlist(cls, v: object) -> frozenset[int]:
+        return _parse_int_set(v, field="chat_allowlist")
 
     @field_validator("log_level")
     @classmethod

@@ -23,6 +23,7 @@ def test_defaults_applied(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.rate_per_chat_per_min == 10
     assert s.allowlist_mode is True
     assert s.admin_ids == frozenset()
+    assert s.chat_allowlist == frozenset()
     assert s.cache_db == Path("/data/yoink.sqlite")
     assert s.workdir == Path("/tmp/yoink")
     assert s.ig_cookies_file is None
@@ -57,6 +58,35 @@ def test_admin_ids_empty_string_yields_empty_set(
 def test_admin_ids_rejects_non_int(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("YOINK_BOT_TOKEN", "t")
     monkeypatch.setenv("YOINK_ADMIN_IDS", "111,abc")
+
+    with pytest.raises(ValidationError):
+        Settings()  # type: ignore[call-arg]
+
+
+def test_chat_allowlist_parses_signed_ints(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("YOINK_BOT_TOKEN", "t")
+    monkeypatch.setenv("YOINK_CHAT_ALLOWLIST", "-4899777325, 123 , -100200300400")
+
+    s = Settings()  # type: ignore[call-arg]
+
+    assert s.chat_allowlist == frozenset({-4899777325, 123, -100200300400})
+    assert isinstance(s.chat_allowlist, frozenset)
+
+
+def test_chat_allowlist_empty_string_yields_empty_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("YOINK_BOT_TOKEN", "t")
+    monkeypatch.setenv("YOINK_CHAT_ALLOWLIST", "")
+
+    s = Settings()  # type: ignore[call-arg]
+
+    assert s.chat_allowlist == frozenset()
+
+
+def test_chat_allowlist_rejects_non_int(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("YOINK_BOT_TOKEN", "t")
+    monkeypatch.setenv("YOINK_CHAT_ALLOWLIST", "-100,foo")
 
     with pytest.raises(ValidationError):
         Settings()  # type: ignore[call-arg]

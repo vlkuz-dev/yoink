@@ -84,7 +84,7 @@ When testing a provider:
 
 - `src/yoink/__main__.py` — entrypoint: loads settings, builds services, wires Dispatcher.workflow_data, runs polling.
 - `src/yoink/bot.py` — `build_bot(settings)` factory returning the aiogram `Bot` + `Dispatcher` pair.
-- `src/yoink/handlers.py` — `register_routers(dp, admin_ids)`: includes admin router (before message router) and the URL pipeline router.
+- `src/yoink/handlers.py` — `register_routers(dp, *, admin_ids, chat_allowlist)`: includes admin router (before message router) and the URL pipeline router; the pipeline router has a chat-id allowlist filter (empty allowlist = deny all).
 - `src/yoink/extractor/urls.py` — entity + regex URL extraction, scheme allowlist, tracking-param stripping, dedupe, cap at `_MAX_URLS_PER_MESSAGE`.
 - `src/yoink/core/pipeline.py` — orchestration entry, worker loop, retry helper, heartbeat task, workdir sweep.
 - `src/yoink/core/registry.py` — provider autodiscovery and domain dispatch.
@@ -101,3 +101,4 @@ When testing a provider:
 - Cache lifecycle is owned by `__main__`: `await cache.init()` before `dp.workflow_data["cache"] = cache`, `await cache.close()` after `bot.session.close()`. Preserve this ordering when refactoring shutdown.
 - Allowlist when `YOINK_ALLOWLIST_MODE=true` is derived from `ProviderRegistry.known_domains` (union of `provider.domains`, normalized) and passed to `Pipeline(allowlist=...)`. SSRF DNS resolution at submit-time is intentionally off (`resolve_dns=False`); literal-IP, scheme, port, userinfo, and host-allowlist checks still apply. `gallery-dl` / `yt-dlp` resolve hostnames internally.
 - Providers needing settings-derived config (cookies, byte caps, timeouts) expose a module-level `configure(...)`; `__main__` calls it before `ProviderRegistry.autodiscover()`. See `instagram_provider.configure(...)` for the pattern.
+- `YOINK_CHAT_ALLOWLIST` gates the URL pipeline router at the aiogram filter level. Empty allowlist silently drops every message; admin DM commands still work because the admin router runs first and is gated by user.id only. Polling is also pinned to `allowed_updates=["message"]` so `business_message` / `guest_message` / channel updates are never even requested.

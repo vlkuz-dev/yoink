@@ -67,6 +67,7 @@ complete list.
 | `YOINK_RATE_PER_CHAT_PER_MIN` | `10` | Token-bucket refill per chat |
 | `YOINK_ALLOWLIST_MODE` | `false` | If `true`, drop URLs whose host is not in the registered provider domain set |
 | `YOINK_ADMIN_IDS` | _(empty)_ | Comma-separated user IDs for `/ping`, `/stats`, `/flush_cache` |
+| `YOINK_CHAT_ALLOWLIST` | _(empty)_ | Comma-separated chat IDs (signed; groups negative) the URL pipeline answers in. Empty = deny all. Independent of `YOINK_ADMIN_IDS` — admin commands still work in DMs. To let an admin process URLs in DM, add their user ID (== private chat id) here too. |
 | `YOINK_CACHE_DB` | `/data/yoink.sqlite` | SQLite file path |
 | `YOINK_WORKDIR` | `/tmp/yoink` | Per-job scratch dir parent |
 | `YOINK_IG_COOKIES_FILE` | _(empty)_ | gallery-dl cookie file for private/age-gated IG |
