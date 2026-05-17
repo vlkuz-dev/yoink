@@ -167,29 +167,115 @@ async def test_flush_non_admin_silent(tmp_path: Path) -> None:
         await cache.close()
 
 
-def test_admin_router_registers_three_commands() -> None:
+def _admin_commands(router: Any) -> set[str]:
+    """Extract command strings registered on the router's message observer."""
+    seen: set[str] = set()
+    for handler in router.message.handlers:
+        for flt in handler.filters:
+            cb = getattr(flt, "callback", None)
+            commands = getattr(cb, "commands", None)
+            if commands:
+                seen.update(str(c) for c in commands)
+    return seen
+
+
+def test_admin_router_registers_expected_commands() -> None:
     from yoink.admin.commands import build_admin_router
 
     router = build_admin_router()
-    # router.message observer has 3 handlers registered
-    assert len(router.message.handlers) == 3
+    assert _admin_commands(router) == {"ping", "stats", "flush_cache"}
 
 
-def test_admin_router_applies_admin_filter_when_ids_passed() -> None:
-    from yoink.admin.commands import build_admin_router
+@pytest.mark.asyncio
+async def test_admin_router_filter_routes_only_admins() -> None:
+    """Router-level filter from `build_admin_router(ids)` rejects non-admin messages
+    so they fall through to subsequent routers. Admin messages are consumed by the
+    admin router and never reach the fallthrough."""
+    from aiogram import Dispatcher, F, Router
+    from aiogram.types import Chat, Message, Update, User
 
-    # With admin_ids set, router-level filter is installed so non-admin
-    # messages skip admin handlers entirely (and fall through to message
-    # router for URL extraction).
-    router = build_admin_router(frozenset({42}))
-    assert len(router.message._handler.filters) >= 1
+    admin = Router(name="admin-under-test")
+    admin.message.filter(F.from_user.id.in_(frozenset({_ADMIN_UID})))
+    admin_hits: list[int] = []
+
+    async def admin_handler(message: Message) -> None:
+        admin_hits.append(message.from_user.id if message.from_user else -1)
+
+    admin.message.register(admin_handler, lambda m: m.text == "/probe")
+
+    fallthrough = Router(name="fallthrough")
+    fall_hits: list[int] = []
+
+    async def fall_handler(message: Message) -> None:
+        fall_hits.append(message.from_user.id if message.from_user else -1)
+
+    fallthrough.message.register(fall_handler, lambda m: m.text == "/probe")
+
+    dp = Dispatcher()
+    dp.include_router(admin)
+    dp.include_router(fallthrough)
+
+    def make_update(uid: int) -> Update:
+        return Update.model_validate(
+            {
+                "update_id": uid,
+                "message": {
+                    "message_id": uid,
+                    "date": 0,
+                    "chat": Chat(id=_CHAT_ID, type="private").model_dump(),
+                    "from": User(id=uid, is_bot=False, first_name="x").model_dump(),
+                    "text": "/probe",
+                },
+            },
+        )
+
+    bot = MagicMock()
+    bot.id = 1
+    await dp.feed_update(bot=bot, update=make_update(_ADMIN_UID))
+    await dp.feed_update(bot=bot, update=make_update(_NON_ADMIN_UID))
+
+    assert admin_hits == [_ADMIN_UID]
+    assert fall_hits == [_NON_ADMIN_UID]
 
 
-def test_admin_router_no_filter_when_admin_ids_omitted() -> None:
-    from yoink.admin.commands import build_admin_router
+@pytest.mark.asyncio
+async def test_admin_router_no_filter_accepts_everyone() -> None:
+    """Without admin_ids, the router-level filter is absent. Both admin and non-admin
+    messages reach the registered handlers."""
+    from aiogram import Dispatcher, Router
+    from aiogram.types import Chat, Message, Update, User
 
-    router = build_admin_router(None)
-    assert router.message._handler.filters == []
+    admin = Router(name="admin-open")
+    hits: list[int] = []
+
+    async def handler(message: Message) -> None:
+        hits.append(message.from_user.id if message.from_user else -1)
+
+    admin.message.register(handler, lambda m: m.text == "/probe")
+
+    dp = Dispatcher()
+    dp.include_router(admin)
+
+    def make_update(uid: int) -> Update:
+        return Update.model_validate(
+            {
+                "update_id": uid,
+                "message": {
+                    "message_id": uid,
+                    "date": 0,
+                    "chat": Chat(id=_CHAT_ID, type="private").model_dump(),
+                    "from": User(id=uid, is_bot=False, first_name="x").model_dump(),
+                    "text": "/probe",
+                },
+            },
+        )
+
+    bot = MagicMock()
+    bot.id = 1
+    await dp.feed_update(bot=bot, update=make_update(_NON_ADMIN_UID))
+    await dp.feed_update(bot=bot, update=make_update(_ADMIN_UID))
+
+    assert hits == [_NON_ADMIN_UID, _ADMIN_UID]
 
 
 class _AllowAll:

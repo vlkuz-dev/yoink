@@ -39,8 +39,11 @@ RUN groupadd --system --gid 1000 yoink && \
 
 COPY --from=builder /wheels /wheels
 
+ARG GALLERY_DL_VERSION=1.27.6
+ARG YT_DLP_VERSION=2024.8.6
+
 RUN pip install --no-index --find-links=/wheels yoink && \
-    pip install "gallery-dl>=1.27" "yt-dlp>=2024.8.6" && \
+    pip install "gallery-dl==${GALLERY_DL_VERSION}" "yt-dlp==${YT_DLP_VERSION}" && \
     rm -rf /wheels
 
 WORKDIR /app

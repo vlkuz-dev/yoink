@@ -149,3 +149,11 @@ class TestExtractUrlsEmpty:
 def test_trailing_punct_strip_parametrized(raw: str, expected: str) -> None:
     text = f"see {raw} ok"
     assert extract_urls(_msg(text=text)) == [expected]
+
+
+def test_extract_urls_caps_at_max_per_message() -> None:
+    urls = [f"https://example.com/p/{i}" for i in range(20)]
+    text = " ".join(urls)
+    result = extract_urls(_msg(text=text))
+    assert len(result) == 8
+    assert result == urls[:8]

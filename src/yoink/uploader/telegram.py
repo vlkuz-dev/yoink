@@ -82,17 +82,7 @@ def _input_for_groupable(
     raise RuntimeError(f"non-groupable kind reached _input_for_groupable: {item.kind}")
 
 
-def _chunks(
-    seq: list[tuple[int, MediaItem]],
-    size: int,
-) -> list[list[tuple[int, MediaItem]]]:
-    return [seq[i : i + size] for i in range(0, len(seq), size)]
-
-
-def _chunks_cached(
-    seq: list[tuple[int, CachedFile]],
-    size: int,
-) -> list[list[tuple[int, CachedFile]]]:
+def _chunks(seq: list[T], size: int) -> list[list[T]]:
     return [seq[i : i + size] for i in range(0, len(seq), size)]
 
 
@@ -245,7 +235,7 @@ class TelegramUploader:
         caption: str | None,
     ) -> bool:
         caption_used = False
-        for chunk_idx, chunk in enumerate(_chunks_cached(groupable, _MEDIA_GROUP_MAX)):
+        for chunk_idx, chunk in enumerate(_chunks(groupable, _MEDIA_GROUP_MAX)):
             media_list: list[
                 InputMediaAudio
                 | InputMediaDocument

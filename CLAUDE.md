@@ -82,10 +82,22 @@ When testing a provider:
 
 ## Where things live
 
-- `src/yoink/core/pipeline.py` — orchestration entry, worker loop, retry helper.
+- `src/yoink/__main__.py` — entrypoint: loads settings, builds services, wires Dispatcher.workflow_data, runs polling.
+- `src/yoink/bot.py` — `build_bot(settings)` factory returning the aiogram `Bot` + `Dispatcher` pair.
+- `src/yoink/handlers.py` — `register_routers(dp, admin_ids)`: includes admin router (before message router) and the URL pipeline router.
+- `src/yoink/extractor/urls.py` — entity + regex URL extraction, scheme allowlist, tracking-param stripping, dedupe, cap at `_MAX_URLS_PER_MESSAGE`.
+- `src/yoink/core/pipeline.py` — orchestration entry, worker loop, retry helper, heartbeat task, workdir sweep.
 - `src/yoink/core/registry.py` — provider autodiscovery and domain dispatch.
+- `src/yoink/core/errors.py` — canonical exception hierarchy (`ProviderError`, `ProviderTransientError`, `MediaTooLarge`, `SubprocessTimeoutError`). Add new error types here, not in their consumers.
 - `src/yoink/cache/store.py` — `aiosqlite` `file_id` cache, WAL mode, lock-guarded writes.
-- `src/yoink/downloader/safety.py` — URL validation, filename sanitization.
-- `src/yoink/uploader/telegram.py` — single / album / chunked uploads, retry-after handling.
+- `src/yoink/downloader/safety.py` — URL validation (SSRF guards, allowlist), filename sanitization.
+- `src/yoink/uploader/telegram.py` — single / album / chunked uploads, retry-after handling, stale-file_id and too-big detection.
 - `src/yoink/middleware.py` — correlation id middleware (rate limiting lives in `Pipeline.submit`).
 - `src/yoink/admin/commands.py` — `/ping`, `/stats`, `/flush_cache` (admin-gated, silent for non-admins).
+
+## Runtime invariants
+
+- `Pipeline.start()` runs `sweep_workdir()` (removes orphan per-job dirs from prior crashes, preserves `.heartbeat`) and spawns a heartbeat task that touches `<YOINK_WORKDIR>/.heartbeat` every 10 s. The docker-compose healthcheck reads `find /tmp/yoink/.heartbeat -mmin -1`. If you walk the workdir tree, always preserve `.heartbeat`.
+- Cache lifecycle is owned by `__main__`: `await cache.init()` before `dp.workflow_data["cache"] = cache`, `await cache.close()` after `bot.session.close()`. Preserve this ordering when refactoring shutdown.
+- Allowlist when `YOINK_ALLOWLIST_MODE=true` is derived from `ProviderRegistry.known_domains` (union of `provider.domains`, normalized) and passed to `Pipeline(allowlist=...)`. SSRF DNS resolution at submit-time is intentionally off (`resolve_dns=False`); literal-IP, scheme, port, userinfo, and host-allowlist checks still apply. `gallery-dl` / `yt-dlp` resolve hostnames internally.
+- Providers needing settings-derived config (cookies, byte caps, timeouts) expose a module-level `configure(...)`; `__main__` calls it before `ProviderRegistry.autodiscover()`. See `instagram_provider.configure(...)` for the pattern.

@@ -9,6 +9,8 @@ if TYPE_CHECKING:
 
 _TRAILING_PUNCT = ".,;:!?)]}>\"'"
 
+_MAX_URLS_PER_MESSAGE = 8
+
 _URL_REGEX = re.compile(
     r"""https?://[^\s<>"'`]+""",
     re.IGNORECASE,
@@ -86,4 +88,6 @@ def extract_urls(message: Message) -> list[str]:
             continue
         seen.add(normalized)
         out.append(normalized)
+        if len(out) >= _MAX_URLS_PER_MESSAGE:
+            break
     return out

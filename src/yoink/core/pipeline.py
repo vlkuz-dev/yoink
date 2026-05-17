@@ -216,8 +216,11 @@ class Pipeline:
             _log.warning("cache_resend_too_large", url=url, chat_id=chat_id)
             return False
         except TelegramAPIError:
+            # Transient Telegram-side error on cached resend. Don't surface
+            # the cached entry as served — fall back to a fresh fetch so the
+            # user still gets media when the API recovers.
             _log.exception("cache_resend_api_error", url=url, chat_id=chat_id)
-            return True
+            return False
         return True
 
     async def _worker(self, worker_id: int) -> None:

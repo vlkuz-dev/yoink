@@ -318,6 +318,145 @@ async def test_cache_resend_too_big_invalidates_and_refetches(tmp_path: Path) ->
 
 
 @pytest.mark.asyncio
+async def test_cache_resend_stale_file_id_invalidates_and_refetches(tmp_path: Path) -> None:
+    from aiogram.exceptions import TelegramBadRequest
+    from aiogram.methods.send_media_group import SendMediaGroup
+
+    class StaleOnce:
+        def __init__(self) -> None:
+            self.cached_sends = 0
+            self.sends: list[tuple[int, int | None, MediaPackage]] = []
+            self.next_file_id = 0
+
+        async def send(
+            self,
+            *,
+            chat_id: int,
+            reply_to: int | None,
+            package: MediaPackage,
+        ) -> list[CachedFile]:
+            self.sends.append((chat_id, reply_to, package))
+            out: list[CachedFile] = []
+            for item in package.items:
+                self.next_file_id += 1
+                out.append(
+                    CachedFile(
+                        file_id=f"FID-{self.next_file_id}",
+                        kind=item.kind,
+                        mime=item.mime,
+                    ),
+                )
+            return out
+
+        async def send_cached(
+            self,
+            *,
+            chat_id: int,
+            reply_to: int | None,
+            files: list[CachedFile],
+        ) -> list[CachedFile]:
+            self.cached_sends += 1
+            raise TelegramBadRequest(
+                method=SendMediaGroup(chat_id=chat_id, media=[]),
+                message="Bad Request: wrong file identifier/HTTP URL specified",
+            )
+
+    provider = FakeProvider(media_root=tmp_path)
+    uploader = StaleOnce()
+    pipeline, cache, _ = await _build_pipeline(
+        tmp_path, provider=provider, uploader=uploader,  # type: ignore[arg-type]
+    )
+    try:
+        url = "https://www.instagram.com/p/stale/"
+        await cache.put(
+            hash_url(url),
+            url,
+            "instagram",
+            [CachedFile(file_id="EXPIRED", kind="photo", mime="image/jpeg")],
+        )
+        await pipeline.submit(_make_message(url))
+        await pipeline.join()
+
+        assert uploader.cached_sends == 1
+        assert len(provider.fetch_calls) == 1
+        assert len(uploader.sends) == 1
+        stored = await cache.get(hash_url(url))
+        assert stored is not None and stored[0].file_id != "EXPIRED"
+    finally:
+        await pipeline.stop()
+        await cache.close()
+
+
+@pytest.mark.asyncio
+async def test_cache_resend_api_error_falls_back_to_fresh_fetch(tmp_path: Path) -> None:
+    from aiogram.exceptions import TelegramAPIError
+    from aiogram.methods.send_media_group import SendMediaGroup
+
+    class TransientApiOnce:
+        def __init__(self) -> None:
+            self.cached_sends = 0
+            self.sends: list[tuple[int, int | None, MediaPackage]] = []
+            self.next_file_id = 0
+
+        async def send(
+            self,
+            *,
+            chat_id: int,
+            reply_to: int | None,
+            package: MediaPackage,
+        ) -> list[CachedFile]:
+            self.sends.append((chat_id, reply_to, package))
+            out: list[CachedFile] = []
+            for item in package.items:
+                self.next_file_id += 1
+                out.append(
+                    CachedFile(
+                        file_id=f"FID-{self.next_file_id}",
+                        kind=item.kind,
+                        mime=item.mime,
+                    ),
+                )
+            return out
+
+        async def send_cached(
+            self,
+            *,
+            chat_id: int,
+            reply_to: int | None,
+            files: list[CachedFile],
+        ) -> list[CachedFile]:
+            self.cached_sends += 1
+            raise TelegramAPIError(
+                method=SendMediaGroup(chat_id=chat_id, media=[]),
+                message="upstream gateway timeout",
+            )
+
+    provider = FakeProvider(media_root=tmp_path)
+    uploader = TransientApiOnce()
+    pipeline, cache, _ = await _build_pipeline(
+        tmp_path, provider=provider, uploader=uploader,  # type: ignore[arg-type]
+    )
+    try:
+        url = "https://www.instagram.com/p/glitch/"
+        await cache.put(
+            hash_url(url),
+            url,
+            "instagram",
+            [CachedFile(file_id="ORIG", kind="photo", mime="image/jpeg")],
+        )
+        await pipeline.submit(_make_message(url))
+        await pipeline.join()
+
+        assert uploader.cached_sends == 1
+        # transient API failure must not be swallowed silently — user got media via fresh fetch.
+        assert len(provider.fetch_calls) == 1
+        assert len(uploader.sends) == 1
+    finally:
+        await pipeline.stop()
+        await cache.close()
+
+
+@pytest.mark.asyncio
 async def test_pipeline_silently_skips_unknown_url(tmp_path: Path) -> None:
     provider = FakeProvider(media_root=tmp_path)
     uploader = FakeUploader()
@@ -394,10 +533,9 @@ async def test_pipeline_workdir_cleaned_after_job(tmp_path: Path) -> None:
         await pipeline.submit(_make_message("https://www.instagram.com/p/clean/"))
         await pipeline.join()
         work_root = tmp_path / "work"
-        # root persists; per-job subdirs are removed
-        if work_root.exists():
-            subdirs = [p for p in work_root.iterdir() if p.is_dir()]
-            assert subdirs == []
+        assert work_root.exists()
+        subdirs = [p for p in work_root.iterdir() if p.is_dir()]
+        assert subdirs == []
     finally:
         await pipeline.stop()
         await cache.close()
