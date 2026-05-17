@@ -314,6 +314,39 @@ async def test_retry_after_triggers_sleep_then_succeeds(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_retry_after_twice_then_succeeds(tmp_path: Path) -> None:
+    item = _photo_item(tmp_path, "p")
+    err1 = TelegramRetryAfter(method=_Method(), message="rate", retry_after=2)
+    err2 = TelegramRetryAfter(method=_Method(), message="rate", retry_after=3)
+    bot = _make_bot(photo_results=[err1, err2, _photo_message("PHOTO_ID")])
+    sleeps: list[float] = []
+
+    async def fake_sleep(s: float) -> None:
+        sleeps.append(s)
+
+    uploader = TelegramUploader(bot, sleep=fake_sleep)
+    pkg = MediaPackage(source_url="https://x", provider="ig", items=[item])
+    out = await uploader.send(_CHAT_ID, None, pkg)
+
+    assert out == [CachedFile(file_id="PHOTO_ID", kind="photo", mime="image/jpeg")]
+    assert sleeps == [2.5, 3.5]
+    assert bot.send_photo.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_retry_after_exhausted_propagates(tmp_path: Path) -> None:
+    item = _photo_item(tmp_path, "p")
+    err = TelegramRetryAfter(method=_Method(), message="rate", retry_after=1)
+    bot = _make_bot(photo_results=[err, err, err])
+    uploader = TelegramUploader(bot, sleep=_noop_sleep)
+
+    pkg = MediaPackage(source_url="https://x", provider="ig", items=[item])
+    with pytest.raises(TelegramRetryAfter):
+        await uploader.send(_CHAT_ID, None, pkg)
+    assert bot.send_photo.await_count == 3
+
+
+@pytest.mark.asyncio
 async def test_too_big_raises_media_too_large(tmp_path: Path) -> None:
     item = _video_item(tmp_path, "v")
     bad = TelegramBadRequest(method=_Method(), message="File is too big")

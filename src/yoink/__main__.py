@@ -90,9 +90,15 @@ async def _run() -> int:
         stop_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await stop_task
-        await pipeline.stop()
-        await bot.session.close()
-        await cache.close()
+        for label, coro in (
+            ("pipeline_stop_failed", pipeline.stop()),
+            ("bot_session_close_failed", bot.session.close()),
+            ("cache_close_failed", cache.close()),
+        ):
+            try:
+                await coro
+            except Exception as exc:
+                log.warning(label, error=repr(exc))
         log.info("yoink stopped", poll_error=repr(poll_exc) if poll_exc else None)
     if poll_exc is not None:
         raise poll_exc

@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 
 _MEDIA_GROUP_MAX = 10
 _RETRY_PAD_S = 0.5
+_MAX_RETRY_AFTER_ATTEMPTS = 3
 _TOO_BIG_PHRASES: tuple[str, ...] = (
     "file is too big",
     "request entity too large",
@@ -465,23 +466,20 @@ class TelegramUploader:
         *,
         fallback_item: MediaItem | None = None,
     ) -> T:
-        try:
-            return await factory()
-        except TelegramRetryAfter as exc:
-            await self._sleep(float(exc.retry_after) + _RETRY_PAD_S)
+        last_retry: TelegramRetryAfter | None = None
+        for _ in range(_MAX_RETRY_AFTER_ATTEMPTS):
             try:
                 return await factory()
-            except TelegramBadRequest as exc2:
-                if _is_too_big(exc2):
+            except TelegramRetryAfter as exc:
+                last_retry = exc
+                await self._sleep(float(exc.retry_after) + _RETRY_PAD_S)
+                continue
+            except TelegramBadRequest as exc:
+                if _is_too_big(exc):
                     raise MediaTooLarge(
-                        f"telegram rejected upload: {exc2.message}",
+                        f"telegram rejected upload: {exc.message}",
                         path=_path_for(fallback_item),
-                    ) from exc2
+                    ) from exc
                 raise
-        except TelegramBadRequest as exc:
-            if _is_too_big(exc):
-                raise MediaTooLarge(
-                    f"telegram rejected upload: {exc.message}",
-                    path=_path_for(fallback_item),
-                ) from exc
-            raise
+        assert last_retry is not None
+        raise last_retry
