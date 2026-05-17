@@ -6,8 +6,10 @@ from pathlib import Path
 
 import pytest
 
+from yoink.core.errors import CookiesExpired
 from yoink.downloader.runner import SubprocessResult, SubprocessTimeoutError
 from yoink.providers.base import Provider
+from yoink.providers.cookie_health import CookieHealth
 from yoink.providers.instagram import (
     InstagramProvider,
     MediaTooLarge,
@@ -218,7 +220,7 @@ async def test_gallery_dl_rc1_triggers_yt_dlp_fallback(tmp_path: Path) -> None:
 
     rec = _Recorder(
         [
-            _result(returncode=1, stderr="login required"),
+            _result(returncode=1, stderr="some error"),
             _result(),
         ],
         side_effect=side,
@@ -285,7 +287,7 @@ async def test_one_transient_one_permanent_is_transient(tmp_path: Path) -> None:
     """If either extractor failed transiently, the combined fetch is retry-eligible."""
     rec = _Recorder(
         [
-            _result(returncode=1, stderr="login required"),  # permanent
+            _result(returncode=1, stderr="some error"),  # permanent (non-cookie)
             SubprocessTimeoutError(["yt-dlp"], 30.0),  # transient
         ],
     )
@@ -298,7 +300,7 @@ async def test_5xx_stderr_marks_transient(tmp_path: Path) -> None:
     """Upstream 5xx in stderr is treated as transient."""
     rec = _Recorder(
         [
-            _result(returncode=1, stderr="login required"),  # permanent
+            _result(returncode=1, stderr="some error"),  # permanent (non-cookie)
             _result(returncode=1, stderr="HTTP Error 503: Service Unavailable"),
         ],
     )
@@ -362,7 +364,7 @@ async def test_yt_dlp_uses_security_flags(tmp_path: Path) -> None:
 
     rec = _Recorder(
         [
-            _result(returncode=1, stderr="login required"),
+            _result(returncode=1, stderr="some error"),
             _result(),
         ],
         side_effect=side,
@@ -466,7 +468,7 @@ async def test_yt_dlp_info_json_sidecar_resolved(tmp_path: Path) -> None:
 
     rec = _Recorder(
         [
-            _result(returncode=1, stderr="login required"),
+            _result(returncode=1, stderr="some error"),
             _result(),
         ],
         side_effect=side,
@@ -521,3 +523,89 @@ def test_configure_applies_runtime_settings(tmp_path: Path) -> None:
     assert p._effective_cookies() == cookies
     assert p._effective_max_bytes() == 4096
     assert p._effective_timeout() == 12.0
+
+
+def test_configure_mirrors_cookies_path_onto_health(tmp_path: Path) -> None:
+    p = InstagramProvider()
+    cookies = tmp_path / "c.txt"
+    cookies.write_text("c", encoding="utf-8")
+    health = CookieHealth()
+
+    p.configure(cookies_file=cookies, cookie_health=health)
+
+    assert health.path == cookies
+
+
+async def test_login_required_raises_cookies_expired(tmp_path: Path) -> None:
+    """`"login required"` from gallery-dl maps to CookiesExpired, not ProviderError."""
+    rec = _Recorder([_result(returncode=1, stderr="login required")])
+    p = InstagramProvider(runner=rec, probe_video_dims=False)
+
+    with pytest.raises(CookiesExpired) as ei:
+        await p.fetch("https://www.instagram.com/p/EXP/", tmp_path)
+
+    assert ei.value.reason == "login_required"
+    # Permanent classification: not transient.
+    assert not isinstance(ei.value, ProviderTransientError)
+
+
+async def test_login_required_skips_yt_dlp_fallback(tmp_path: Path) -> None:
+    """When gallery-dl reports cookies-dead, yt-dlp is not invoked."""
+    rec = _Recorder([_result(returncode=1, stderr="login required")])
+    p = InstagramProvider(runner=rec, probe_video_dims=False)
+
+    with pytest.raises(CookiesExpired):
+        await p.fetch("https://www.instagram.com/p/EXP/", tmp_path)
+
+    assert [c[0] for c in rec.calls] == ["gallery-dl"]
+
+
+async def test_checkpoint_required_raises_cookies_expired(tmp_path: Path) -> None:
+    rec = _Recorder([_result(returncode=1, stderr="checkpoint_required: please verify")])
+    p = InstagramProvider(runner=rec, probe_video_dims=False)
+
+    with pytest.raises(CookiesExpired) as ei:
+        await p.fetch("https://www.instagram.com/p/CHK/", tmp_path)
+    assert ei.value.reason == "checkpoint_required"
+
+
+async def test_yt_dlp_cookies_dead_after_zero_gallery_dl_items(tmp_path: Path) -> None:
+    """gallery-dl rc=0 zero items, yt-dlp then reports cookies-dead → CookiesExpired."""
+    rec = _Recorder(
+        [
+            _result(),  # gallery-dl rc=0 but no files
+            _result(returncode=1, stderr="Please log in to access this content"),
+        ],
+    )
+    p = InstagramProvider(runner=rec, probe_video_dims=False)
+    with pytest.raises(CookiesExpired) as ei:
+        await p.fetch("https://www.instagram.com/p/ZE/", tmp_path)
+    assert ei.value.reason == "please_log_in"
+
+
+async def test_fetch_marks_health_success(tmp_path: Path) -> None:
+    def side(cmd: list[str], cwd: Path) -> None:
+        if cmd[0] == "gallery-dl":
+            _make_file(tmp_path / "p1.jpg")
+
+    rec = _Recorder([_result()], side_effect=side)
+    health = CookieHealth()
+    p = InstagramProvider(runner=rec, probe_video_dims=False, cookie_health=health)
+    await p.fetch("https://www.instagram.com/p/OK/", tmp_path)
+
+    assert health.last_success is not None
+    assert health.last_failure is None
+    assert not health.incident_open
+
+
+async def test_fetch_marks_health_failure_on_cookies_dead(tmp_path: Path) -> None:
+    rec = _Recorder([_result(returncode=1, stderr="login required")])
+    health = CookieHealth()
+    p = InstagramProvider(runner=rec, probe_video_dims=False, cookie_health=health)
+
+    with pytest.raises(CookiesExpired):
+        await p.fetch("https://www.instagram.com/p/X/", tmp_path)
+
+    assert health.incident_open
+    assert health.last_failure is not None
+    assert health.last_failure[1] == "login_required"

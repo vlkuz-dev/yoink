@@ -5,6 +5,7 @@ import contextlib
 import signal
 import sys
 
+from yoink.admin.notifier import AdminNotifier
 from yoink.bot import build_bot
 from yoink.cache.store import FileIdCache
 from yoink.config import Settings
@@ -12,6 +13,7 @@ from yoink.core.pipeline import Pipeline
 from yoink.core.rate_limiter import TokenBucketLimiter
 from yoink.core.registry import ProviderRegistry
 from yoink.log import configure_logging, get_logger
+from yoink.providers.cookie_health import CookieHealth
 from yoink.providers.instagram import provider as instagram_provider
 from yoink.uploader.telegram import TelegramUploader
 
@@ -30,15 +32,22 @@ async def _run() -> int:
     cache = FileIdCache(settings.cache_db)
     await cache.init()
 
+    cookie_health = CookieHealth()
     instagram_provider.configure(
         cookies_file=settings.ig_cookies_file,
         max_file_bytes=settings.max_file_mb * 1024 * 1024,
         download_timeout_s=float(settings.download_timeout_s),
+        cookie_health=cookie_health,
     )
     registry = ProviderRegistry.autodiscover()
     rate_limiter = TokenBucketLimiter(rate_per_min=settings.rate_per_chat_per_min)
     bot, dp = build_bot(settings)
     uploader = TelegramUploader(bot)
+    notifier = AdminNotifier(
+        bot=bot,
+        admin_ids=settings.admin_ids,
+        log=get_logger("yoink.notifier"),
+    )
     allowlist = registry.known_domains if settings.allowlist_mode else None
     pipeline = Pipeline(
         registry=registry,
@@ -49,11 +58,14 @@ async def _run() -> int:
         workers=settings.workers,
         queue_maxsize=settings.queue_maxsize,
         allowlist=allowlist,
+        notifier=notifier,
+        cookie_health=cookie_health,
     )
 
     dp["pipeline"] = pipeline
     dp["settings"] = settings
     dp["cache"] = cache
+    dp["cookie_health"] = cookie_health
 
     await pipeline.start()
     log.info("pipeline started")

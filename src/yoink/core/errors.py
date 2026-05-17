@@ -15,6 +15,26 @@ class ProviderTransientError(ProviderError):
     """Transient provider failure — eligible for pipeline retry."""
 
 
+class CookiesExpired(ProviderError):  # noqa: N818  # error-suffix not standard here; matches ProviderError family
+    """Instagram session cookies are dead/expired/challenged.
+
+    Permanent failure — operator must re-export cookies and overwrite the
+    configured file. Pipeline catches this specifically to trigger a
+    one-shot admin DM via AdminNotifier; not retried (same dead cookies
+    would just burn IG quota).
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        url: str | None = None,
+        reason: str | None = None,
+    ) -> None:
+        super().__init__(message, url=url)
+        self.reason = reason
+
+
 class MediaTooLarge(ProviderError):  # noqa: N818  # name locked in plan
     def __init__(
         self,

@@ -9,7 +9,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 from urllib.parse import urlsplit
 
-from yoink.core.errors import MediaTooLarge, ProviderError, ProviderTransientError
+from yoink.core.errors import (
+    CookiesExpired,
+    MediaTooLarge,
+    ProviderError,
+    ProviderTransientError,
+)
 from yoink.core.models import MediaItem, MediaKind, MediaPackage
 from yoink.downloader.runner import (
     SubprocessResult,
@@ -21,8 +26,11 @@ from yoink.downloader.safety import redact_text, redact_url
 if TYPE_CHECKING:
     from collections.abc import Awaitable
 
+    from yoink.providers.cookie_health import CookieHealth
+
 
 __all__ = [
+    "CookiesExpired",
     "InstagramProvider",
     "MediaTooLarge",
     "ProviderError",
@@ -46,9 +54,16 @@ class _Runner(Protocol):
 class _ToolFailed(Exception):  # noqa: N818  # internal sentinel, not surfaced
     """Internal: one extractor exhausted its options; try the next."""
 
-    def __init__(self, message: str, *, transient: bool = False) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        transient: bool = False,
+        cookies_dead: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.transient = transient
+        self.cookies_dead = cookies_dead
 
 
 _VIDEO_EXTS: frozenset[str] = frozenset({"mp4", "mov", "m4v", "webm", "mkv"})
@@ -111,6 +126,31 @@ _TRANSIENT_STDERR_MARKERS: tuple[str, ...] = (
 def _is_transient_stderr(stderr: str) -> bool:
     text = stderr.lower()
     return any(marker in text for marker in _TRANSIENT_STDERR_MARKERS)
+
+
+# Substrings (case-insensitive) in extractor stderr that indicate the
+# Instagram session cookies are dead/expired/challenged. Matching any of
+# these short-circuits the gallery-dl→yt-dlp fallback (same file, doomed
+# second attempt) and surfaces `CookiesExpired` so the pipeline can DM
+# admins. Conservative starting list — extend as new wordings show up
+# in operator logs.
+_COOKIE_DEAD_STDERR_MARKERS: tuple[str, ...] = (
+    "login required",
+    "login_required",
+    "checkpoint_required",
+    "checkpoint required",
+    "please log in",
+    "requires authentication",
+)
+
+
+def _is_cookie_dead_stderr(stderr: str) -> str | None:
+    """Return a normalized marker key if stderr signals dead cookies, else None."""
+    text = stderr.lower()
+    for marker in _COOKIE_DEAD_STDERR_MARKERS:
+        if marker in text:
+            return marker.replace(" ", "_")
+    return None
 
 
 def _kind_for_ext(ext: str) -> tuple[MediaKind, str | None]:
@@ -244,12 +284,14 @@ class InstagramProvider:
         max_file_bytes: int | None = None,
         download_timeout_s: float | None = None,
         probe_video_dims: bool = True,
+        cookie_health: CookieHealth | None = None,
     ) -> None:
         self._runner: _Runner = runner if runner is not None else run_subprocess
         self._cookies_file = cookies_file
         self._max_file_bytes = max_file_bytes
         self._download_timeout_s = download_timeout_s
         self._probe_video_dims = probe_video_dims
+        self._cookie_health = cookie_health
 
     def can_handle(self, url: str) -> bool:
         try:
@@ -275,6 +317,17 @@ class InstagramProvider:
         try:
             items = await self._run_gallery_dl(url, workdir)
         except _ToolFailed as exc:
+            # Cookies-dead short-circuits the yt-dlp fallback: same file
+            # feeds both extractors, second attempt would just burn IG
+            # quota and double the time-to-error.
+            if exc.cookies_dead is not None:
+                if self._cookie_health is not None:
+                    await self._cookie_health.mark_failure(exc.cookies_dead)
+                raise CookiesExpired(
+                    f"instagram session expired for {redact_url(url)}: {exc.cookies_dead}",
+                    url=url,
+                    reason=exc.cookies_dead,
+                ) from exc
             primary_err = str(exc)
             primary_transient = exc.transient
 
@@ -285,6 +338,14 @@ class InstagramProvider:
             try:
                 items = await self._run_yt_dlp(url, workdir)
             except _ToolFailed as exc:
+                if exc.cookies_dead is not None:
+                    if self._cookie_health is not None:
+                        await self._cookie_health.mark_failure(exc.cookies_dead)
+                    raise CookiesExpired(
+                        f"instagram session expired for {redact_url(url)}: {exc.cookies_dead}",
+                        url=url,
+                        reason=exc.cookies_dead,
+                    ) from exc
                 # If either extractor failed transiently, the combined fetch
                 # is retry-eligible: backoff + retry may let the transient
                 # tool succeed (the permanent-failing one will still fail,
@@ -307,6 +368,9 @@ class InstagramProvider:
 
         for item in items:
             self._enforce_size(item.path)
+
+        if self._cookie_health is not None:
+            await self._cookie_health.mark_success()
 
         return MediaPackage(
             source_url=url,
@@ -342,6 +406,12 @@ class InstagramProvider:
                 f"gallery-dl timeout after {timeout}s", transient=True
             ) from exc
         if res.returncode != 0:
+            cookie_reason = _is_cookie_dead_stderr(res.stderr)
+            if cookie_reason is not None:
+                raise _ToolFailed(
+                    f"gallery-dl rc={res.returncode}: cookies_dead={cookie_reason}",
+                    cookies_dead=cookie_reason,
+                )
             raise _ToolFailed(
                 f"gallery-dl rc={res.returncode}: {redact_text(res.stderr[:_STDERR_PEEK])}",
                 transient=_is_transient_stderr(res.stderr),
@@ -375,6 +445,12 @@ class InstagramProvider:
                 f"yt-dlp timeout after {timeout}s", transient=True
             ) from exc
         if res.returncode != 0:
+            cookie_reason = _is_cookie_dead_stderr(res.stderr)
+            if cookie_reason is not None:
+                raise _ToolFailed(
+                    f"yt-dlp rc={res.returncode}: cookies_dead={cookie_reason}",
+                    cookies_dead=cookie_reason,
+                )
             raise _ToolFailed(
                 f"yt-dlp rc={res.returncode}: {redact_text(res.stderr[:_STDERR_PEEK])}",
                 transient=_is_transient_stderr(res.stderr),
@@ -447,6 +523,7 @@ class InstagramProvider:
         cookies_file: Path | None = None,
         max_file_bytes: int | None = None,
         download_timeout_s: float | None = None,
+        cookie_health: CookieHealth | None = None,
     ) -> None:
         """Apply runtime settings to the autodiscovered singleton.
 
@@ -461,6 +538,12 @@ class InstagramProvider:
             self._max_file_bytes = max_file_bytes
         if download_timeout_s is not None:
             self._download_timeout_s = download_timeout_s
+        if cookie_health is not None:
+            self._cookie_health = cookie_health
+            # Mirror the resolved path onto the health object so
+            # `/ig_status` can stat the file without reaching into provider
+            # internals (handles env-var fallback uniformly).
+            cookie_health.set_path(self._effective_cookies())
 
     @staticmethod
     def _purge_workdir(workdir: Path) -> None:

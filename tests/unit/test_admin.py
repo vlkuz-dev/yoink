@@ -183,7 +183,7 @@ def test_admin_router_registers_expected_commands() -> None:
     from yoink.admin.commands import build_admin_router
 
     router = build_admin_router()
-    assert _admin_commands(router) == {"ping", "stats", "flush_cache"}
+    assert _admin_commands(router) == {"ping", "stats", "flush_cache", "ig_status"}
 
 
 @pytest.mark.asyncio
