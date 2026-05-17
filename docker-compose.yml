@@ -1,0 +1,26 @@
+services:
+  yoink:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: yoink:latest
+    container_name: yoink
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      YOINK_CACHE_DB: /data/yoink.sqlite
+      YOINK_WORKDIR: /tmp/yoink
+    volumes:
+      - ./data:/data
+      - yoink_tmp:/tmp/yoink
+    healthcheck:
+      test: ["CMD-SHELL", "test -n \"$(find /tmp/yoink/.heartbeat -mmin -1 2>/dev/null)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    stop_grace_period: 30s
+
+volumes:
+  yoink_tmp:

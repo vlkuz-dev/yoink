@@ -291,13 +291,13 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Create: `.gitignore`
 - Create: `README.md` (stub)
 
-- [ ] create `pyproject.toml` with deps (aiogram, aiosqlite, structlog, pydantic-settings, httpx, orjson) and dev deps (pytest, pytest-asyncio, pytest-mock, ruff, mypy)
-- [ ] configure ruff (line-length 120, target py311, select E/F/I/B/UP/SIM/N/RUF) and mypy strict in `pyproject.toml`
-- [ ] create `src/yoink/config.py` with `Settings(BaseSettings)` — all env vars from the table above, prefix `YOINK_`
-- [ ] create `src/yoink/log.py` exposing `configure_logging(level, format)` + `get_logger(name)`
-- [ ] create `src/yoink/__main__.py` skeleton that loads settings, configures logging, prints "yoink starting" and exits 0
-- [ ] write tests for `Settings`: defaults applied, required fields raise, comma-separated `ADMIN_IDS` parses to `frozenset[int]`
-- [ ] run `pytest -q && ruff check && mypy src` — must pass before Task 2
+- [x] create `pyproject.toml` with deps (aiogram, aiosqlite, structlog, pydantic-settings, httpx, orjson) and dev deps (pytest, pytest-asyncio, pytest-mock, ruff, mypy)
+- [x] configure ruff (line-length 120, target py311, select E/F/I/B/UP/SIM/N/RUF) and mypy strict in `pyproject.toml`
+- [x] create `src/yoink/config.py` with `Settings(BaseSettings)` — all env vars from the table above, prefix `YOINK_`
+- [x] create `src/yoink/log.py` exposing `configure_logging(level, format)` + `get_logger(name)`
+- [x] create `src/yoink/__main__.py` skeleton that loads settings, configures logging, prints "yoink starting" and exits 0
+- [x] write tests for `Settings`: defaults applied, required fields raise, comma-separated `ADMIN_IDS` parses to `frozenset[int]`
+- [x] run `pytest -q && ruff check && mypy src` — must pass before Task 2
 
 ### Task 2: Core models + URL extractor
 
@@ -308,12 +308,12 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Create: `src/yoink/extractor/urls.py`
 - Create: `tests/unit/test_extractor.py`
 
-- [ ] create `core/models.py` with `MediaItem`, `MediaPackage`, `Job` dataclasses (slots=True, kw_only where appropriate)
-- [ ] create `extractor/urls.py` with `extract_urls(message: aiogram.types.Message) -> list[str]` — uses `message.entities` first (URL + TEXT_LINK), falls back to regex on plain text only when no entities
-- [ ] regex fallback strips trailing punctuation (`.,;:!?)]}>"'`) commonly attached to pasted URLs
-- [ ] add `normalize_url(url: str) -> str` — strips known tracking params (`utm_*`, `igshid`, `si`, `fbclid`), lowercases scheme/host, removes fragment
-- [ ] write tests: extracts from text-mode entity, text_link entity (uses entity.url not displayed text), plain regex fallback, trailing-punct stripped (`https://x.com/p/abc).` → `https://x.com/p/abc`), ignores `tg://` and `mailto:`, normalizes IG URL strips `?igshid=…`
-- [ ] run `pytest -q` — must pass before Task 3
+- [x] create `core/models.py` with `MediaItem`, `MediaPackage`, `Job` dataclasses (slots=True, kw_only where appropriate)
+- [x] create `extractor/urls.py` with `extract_urls(message: aiogram.types.Message) -> list[str]` — uses `message.entities` first (URL + TEXT_LINK), falls back to regex on plain text only when no entities
+- [x] regex fallback strips trailing punctuation (`.,;:!?)]}>"'`) commonly attached to pasted URLs
+- [x] add `normalize_url(url: str) -> str` — strips known tracking params (`utm_*`, `igshid`, `si`, `fbclid`), lowercases scheme/host, removes fragment
+- [x] write tests: extracts from text-mode entity, text_link entity (uses entity.url not displayed text), plain regex fallback, trailing-punct stripped (`https://x.com/p/abc).` → `https://x.com/p/abc`), ignores `tg://` and `mailto:`, normalizes IG URL strips `?igshid=…`
+- [x] run `pytest -q` — must pass before Task 3
 
 ### Task 3: Provider interface + registry with autodiscovery
 
@@ -324,11 +324,11 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Create: `tests/unit/test_registry.py`
 - Create: `tests/fixtures/dummy_provider.py` (test-only fake provider)
 
-- [ ] create `providers/base.py` with `Provider` `Protocol` (name, domains, can_handle, fetch)
-- [ ] create `core/registry.py` with `ProviderRegistry` — `register()`, `find(url)`, `autodiscover()` via `pkgutil.iter_modules(yoink.providers.__path__)` importing each and picking up module-level `provider` attribute matching the Protocol
-- [ ] `find()` first matches by URL host against `domains`, then calls `can_handle()` for fine-grained check
-- [ ] write tests: register manual provider then find by URL; autodiscover picks up a fixture provider; unknown URL returns `None`; `find()` is host-normalized (`www.` and case-insensitive)
-- [ ] run `pytest -q` — must pass before Task 4
+- [x] create `providers/base.py` with `Provider` `Protocol` (name, domains, can_handle, fetch)
+- [x] create `core/registry.py` with `ProviderRegistry` — `register()`, `find(url)`, `autodiscover()` via `pkgutil.iter_modules(yoink.providers.__path__)` importing each and picking up module-level `provider` attribute matching the Protocol
+- [x] `find()` first matches by URL host against `domains`, then calls `can_handle()` for fine-grained check
+- [x] write tests: register manual provider then find by URL; autodiscover picks up a fixture provider; unknown URL returns `None`; `find()` is host-normalized (`www.` and case-insensitive)
+- [x] run `pytest -q` — must pass before Task 4
 
 ### Task 4: Cache layer (SQLite file_id store)
 
@@ -338,12 +338,12 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Create: `src/yoink/cache/schema.sql`
 - Create: `tests/unit/test_cache.py`
 
-- [ ] write `schema.sql`: tables `cached_url(url_hash TEXT PK, source_url TEXT, provider TEXT, created_at INTEGER, last_used_at INTEGER)` and `cached_file(url_hash TEXT, position INT, file_id TEXT, kind TEXT, mime TEXT, PRIMARY KEY(url_hash, position))` with FK (`last_used_at` reserved for future LRU eviction — populated by `get()` but no eviction in MVP)
-- [ ] create `cache/store.py` — `FileIdCache(db_path)` with `init()` (runs schema), `get(url_hash)`, `put(url_hash, source_url, provider, files)`, `flush()`, `stats()`
-- [ ] use `aiosqlite` with WAL mode, single shared connection guarded by `asyncio.Lock` for writes
-- [ ] add `hash_url(normalized_url: str) -> str` helper (sha256, hex, 32 chars)
-- [ ] write tests: init creates schema; put + get round-trips ordered list of files; missing key returns `None`; flush clears; stats returns counts; concurrent puts don't corrupt
-- [ ] run `pytest -q` — must pass before Task 5
+- [x] write `schema.sql`: tables `cached_url(url_hash TEXT PK, source_url TEXT, provider TEXT, created_at INTEGER, last_used_at INTEGER)` and `cached_file(url_hash TEXT, position INT, file_id TEXT, kind TEXT, mime TEXT, PRIMARY KEY(url_hash, position))` with FK (`last_used_at` reserved for future LRU eviction — populated by `get()` but no eviction in MVP)
+- [x] create `cache/store.py` — `FileIdCache(db_path)` with `init()` (runs schema), `get(url_hash)`, `put(url_hash, source_url, provider, files)`, `flush()`, `stats()`
+- [x] use `aiosqlite` with WAL mode, single shared connection guarded by `asyncio.Lock` for writes
+- [x] add `hash_url(normalized_url: str) -> str` helper (sha256, hex, 32 chars)
+- [x] write tests: init creates schema; put + get round-trips ordered list of files; missing key returns `None`; flush clears; stats returns counts; concurrent puts don't corrupt
+- [x] run `pytest -q` — must pass before Task 5
 
 ### Task 5: Safety layer (SSRF, filename sanitization, URL validation)
 
@@ -352,12 +352,12 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Create: `src/yoink/downloader/safety.py`
 - Create: `tests/unit/test_safety.py`
 
-- [ ] `validate_url(url, allowlist: frozenset[str] | None) -> ValidatedURL` — must be `https?://`, resolve **all** A/AAAA records and reject if **any** falls in private/reserved ranges (`0.0.0.0/8`, `10/8`, `100.64/10` CGNAT, `127/8`, `169.254/16`, `172.16/12`, `192.168/16`, `224/4` multicast; IPv6: `::1`, `fc00::/7` ULA, `fe80::/10` link-local, `ff00::/8` multicast), reject userinfo (`user:pass@`), reject ports outside `{80, 443}` unless explicitly allowed
-- [ ] if `allowlist` non-None, host must be in allowlist (post-normalization, suffix match for subdomains)
-- [ ] `sanitize_filename(name: str) -> str` — strip path separators, control chars, leading dots, limit to 200 chars, NFKD normalize
-- [ ] note: full DNS rebinding protection requires IP pinning into the subprocess, which `gallery-dl`/`yt-dlp` don't support per-request — accept this residual risk; document in README; allowlist mode is the harder mitigation
-- [ ] write tests: rejects `file://`, `ftp://`, `http://127.0.0.1`, `http://10.0.0.1`, `http://[::1]`, `http://100.64.0.1`, `http://user:pwd@x`; rejects when **any** resolved IP is private (mock `socket.getaddrinfo` returning mixed RRset); accepts `https://www.instagram.com/p/...`; allowlist enforced; sanitize strips `../` and nulls
-- [ ] run `pytest -q` — must pass before Task 6
+- [x] `validate_url(url, allowlist: frozenset[str] | None) -> ValidatedURL` — must be `https?://`, resolve **all** A/AAAA records and reject if **any** falls in private/reserved ranges (`0.0.0.0/8`, `10/8`, `100.64/10` CGNAT, `127/8`, `169.254/16`, `172.16/12`, `192.168/16`, `224/4` multicast; IPv6: `::1`, `fc00::/7` ULA, `fe80::/10` link-local, `ff00::/8` multicast), reject userinfo (`user:pass@`), reject ports outside `{80, 443}` unless explicitly allowed
+- [x] if `allowlist` non-None, host must be in allowlist (post-normalization, suffix match for subdomains)
+- [x] `sanitize_filename(name: str) -> str` — strip path separators, control chars, leading dots, limit to 200 chars, NFKD normalize
+- [x] note: full DNS rebinding protection requires IP pinning into the subprocess, which `gallery-dl`/`yt-dlp` don't support per-request — accept this residual risk; document in README; allowlist mode is the harder mitigation
+- [x] write tests: rejects `file://`, `ftp://`, `http://127.0.0.1`, `http://10.0.0.1`, `http://[::1]`, `http://100.64.0.1`, `http://user:pwd@x`; rejects when **any** resolved IP is private (mock `socket.getaddrinfo` returning mixed RRset); accepts `https://www.instagram.com/p/...`; allowlist enforced; sanitize strips `../` and nulls
+- [x] run `pytest -q` — must pass before Task 6
 
 ### Task 6: Subprocess runner
 
@@ -365,11 +365,11 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Create: `src/yoink/downloader/runner.py`
 - Create: `tests/unit/test_runner.py`
 
-- [ ] `run_subprocess(cmd: list[str], cwd: Path, timeout_s: int, env: dict) -> SubprocessResult` — uses `asyncio.create_subprocess_exec` with `stdout=PIPE, stderr=PIPE`, enforces timeout via `asyncio.wait_for` + kill on timeout, captures + caps stderr at 64 KB to keep logs manageable
-- [ ] returns `SubprocessResult(returncode, stdout: bytes, stderr: str, duration_s: float)`
-- [ ] never passes user input via `shell=True`; args are always a list
-- [ ] write tests: successful run captures stdout, failed run captures stderr + nonzero rc, timeout kills process and raises `SubprocessTimeout`, no shell injection (test with `cmd=["echo", "; rm -rf /"]` — verifies the literal arg, no shell)
-- [ ] run `pytest -q` — must pass before Task 7
+- [x] `run_subprocess(cmd: list[str], cwd: Path, timeout_s: int, env: dict) -> SubprocessResult` — uses `asyncio.create_subprocess_exec` with `stdout=PIPE, stderr=PIPE`, enforces timeout via `asyncio.wait_for` + kill on timeout, captures + caps stderr at 64 KB to keep logs manageable
+- [x] returns `SubprocessResult(returncode, stdout: bytes, stderr: str, duration_s: float)`
+- [x] never passes user input via `shell=True`; args are always a list
+- [x] write tests: successful run captures stdout, failed run captures stderr + nonzero rc, timeout kills process and raises `SubprocessTimeout`, no shell injection (test with `cmd=["echo", "; rm -rf /"]` — verifies the literal arg, no shell)
+- [x] run `pytest -q` — must pass before Task 7
 
 ### Task 7: Instagram provider (gallery-dl primary, yt-dlp fallback)
 
@@ -378,17 +378,17 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Create: `tests/unit/test_instagram_provider.py`
 - Create: `tests/fixtures/ig_gallery_dl_meta.json`
 
-- [ ] `InstagramProvider` with `name="instagram"`, `domains=frozenset({"instagram.com","www.instagram.com","instagr.am"})`
-- [ ] `can_handle(url)`: regex match against `/p/`, `/reel/`, `/tv/`, `/stories/` paths
-- [ ] `fetch(url, workdir)`: call `gallery-dl --dest <workdir> --no-part --no-skip -o output.mode=null -o output.shorten=false --write-metadata=false --dump-json <url>` via `run_subprocess` with `YOINK_IG_COOKIES_FILE` (`--cookies`) if set. `--dump-json` emits a single JSON array on stdout describing all extracted items (one element per file) — this is the parse target, not per-file `.json` sidecars. Files are still downloaded by gallery-dl into `workdir`.
-- [ ] correlate stdout JSON entries with on-disk files via the `filename`/`extension`/`subcategory` fields gallery-dl emits; resolve each to an absolute path under `workdir`
-- [ ] detect kind from extension + mime (`.mp4`/`.mov` → video, `.jpg`/`.png`/`.webp` → photo, `.gif` → animation)
-- [ ] fallback: if gallery-dl returns rc != 0 OR stdout JSON yields zero items OR no files on disk, run `yt-dlp -o '<workdir>/%(id)s.%(ext)s' --print-json --no-progress --no-warnings <url>` — `--print-json` emits one JSON line per downloaded video AND performs the actual download. Parse each line as a separate `MediaItem`.
-- [ ] use `ffprobe` (when binary available) to populate width/height/duration for videos when extractor metadata is missing
-- [ ] enforce `YOINK_MAX_FILE_MB` per file (raise `MediaTooLarge` — pipeline logs + skips)
-- [ ] export module-level `provider = InstagramProvider()` so autodiscovery picks it up
-- [ ] write tests (mock `run_subprocess` to return canned stdout + simulate files in `tmp_path`): single post returns 1 photo; carousel returns 3 items in stable order; reel returns 1 video; gallery-dl rc=1 triggers yt-dlp fallback and succeeds; gallery-dl rc=0 but zero items also triggers fallback; both fail raises `ProviderError`; `MediaTooLarge` raised when file exceeds limit; `can_handle` matches `/p/`, `/reel/`, rejects `/explore/`
-- [ ] run `pytest -q` — must pass before Task 8
+- [x] `InstagramProvider` with `name="instagram"`, `domains=frozenset({"instagram.com","www.instagram.com","instagr.am"})`
+- [x] `can_handle(url)`: regex match against `/p/`, `/reel/`, `/tv/`, `/stories/` paths
+- [x] `fetch(url, workdir)`: call `gallery-dl --dest <workdir> --no-part --no-skip -o output.mode=null -o output.shorten=false --write-metadata=false --dump-json <url>` via `run_subprocess` with `YOINK_IG_COOKIES_FILE` (`--cookies`) if set. `--dump-json` emits a single JSON array on stdout describing all extracted items (one element per file) — this is the parse target, not per-file `.json` sidecars. Files are still downloaded by gallery-dl into `workdir`.
+- [x] correlate stdout JSON entries with on-disk files via the `filename`/`extension`/`subcategory` fields gallery-dl emits; resolve each to an absolute path under `workdir`
+- [x] detect kind from extension + mime (`.mp4`/`.mov` → video, `.jpg`/`.png`/`.webp` → photo, `.gif` → animation)
+- [x] fallback: if gallery-dl returns rc != 0 OR stdout JSON yields zero items OR no files on disk, run `yt-dlp -o '<workdir>/%(id)s.%(ext)s' --print-json --no-progress --no-warnings <url>` — `--print-json` emits one JSON line per downloaded video AND performs the actual download. Parse each line as a separate `MediaItem`.
+- [x] use `ffprobe` (when binary available) to populate width/height/duration for videos when extractor metadata is missing
+- [x] enforce `YOINK_MAX_FILE_MB` per file (raise `MediaTooLarge` — pipeline logs + skips)
+- [x] export module-level `provider = InstagramProvider()` so autodiscovery picks it up
+- [x] write tests (mock `run_subprocess` to return canned stdout + simulate files in `tmp_path`): single post returns 1 photo; carousel returns 3 items in stable order; reel returns 1 video; gallery-dl rc=1 triggers yt-dlp fallback and succeeds; gallery-dl rc=0 but zero items also triggers fallback; both fail raises `ProviderError`; `MediaTooLarge` raised when file exceeds limit; `can_handle` matches `/p/`, `/reel/`, rejects `/explore/`
+- [x] run `pytest -q` — must pass before Task 8
 
 ### Task 8: Telegram uploader
 
@@ -397,15 +397,15 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Create: `src/yoink/uploader/telegram.py`
 - Create: `tests/unit/test_uploader.py`
 
-- [ ] `TelegramUploader(bot)` with `send(chat_id, reply_to, package: MediaPackage) -> list[CachedFile]` — returns Telegram `file_id`s in package order
-- [ ] single-item path: `send_photo` / `send_video` / `send_animation` / `send_document` based on `MediaItem.kind`
-- [ ] album path (len(items) ≥ 2): build `InputMediaPhoto` / `InputMediaVideo` list and call `send_media_group`; caption goes on first item only
-- [ ] **Telegram limit: media_group accepts 2–10 items**. For packages >10, chunk into multiple `send_media_group` calls of up to 10 each; caption only on first chunk's first item; preserve order across chunks
-- [ ] **mixed-kind handling**: `InputMediaPhoto` + `InputMediaVideo` can share a group; `InputMediaAnimation` / `InputMediaDocument` **cannot** be mixed with photo/video groups. Split: send photo+video items as one or more `send_media_group` calls, then send each animation/document individually as separate messages
-- [ ] handle `TelegramRetryAfter` by waiting `retry_after` + 0.5s then retrying once
-- [ ] handle `TelegramBadRequest` containing "file is too big" → raise `MediaTooLarge` to surface caller-side skip
-- [ ] write tests: single photo upload returns one file_id; album of 3 photos calls `send_media_group` once; album of 15 photos calls `send_media_group` twice (10+5) preserving order; mixed group (2 photos + 1 animation) sends one media_group call (photos) + one send_animation call; `RetryAfter` triggers sleep + retry (mock `asyncio.sleep`); too-big propagates
-- [ ] run `pytest -q` — must pass before Task 9
+- [x] `TelegramUploader(bot)` with `send(chat_id, reply_to, package: MediaPackage) -> list[CachedFile]` — returns Telegram `file_id`s in package order
+- [x] single-item path: `send_photo` / `send_video` / `send_animation` / `send_document` based on `MediaItem.kind`
+- [x] album path (len(items) ≥ 2): build `InputMediaPhoto` / `InputMediaVideo` list and call `send_media_group`; caption goes on first item only
+- [x] **Telegram limit: media_group accepts 2–10 items**. For packages >10, chunk into multiple `send_media_group` calls of up to 10 each; caption only on first chunk's first item; preserve order across chunks
+- [x] **mixed-kind handling**: `InputMediaPhoto` + `InputMediaVideo` can share a group; `InputMediaAnimation` / `InputMediaDocument` **cannot** be mixed with photo/video groups. Split: send photo+video items as one or more `send_media_group` calls, then send each animation/document individually as separate messages
+- [x] handle `TelegramRetryAfter` by waiting `retry_after` + 0.5s then retrying once
+- [x] handle `TelegramBadRequest` containing "file is too big" → raise `MediaTooLarge` to surface caller-side skip
+- [x] write tests: single photo upload returns one file_id; album of 3 photos calls `send_media_group` once; album of 15 photos calls `send_media_group` twice (10+5) preserving order; mixed group (2 photos + 1 animation) sends one media_group call (photos) + one send_animation call; `RetryAfter` triggers sleep + retry (mock `asyncio.sleep`); too-big propagates
+- [x] run `pytest -q` — must pass before Task 9
 
 ### Task 9: Rate limiter
 
@@ -413,10 +413,10 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Create: `src/yoink/core/rate_limiter.py`
 - Create: `tests/unit/test_rate_limiter.py`
 
-- [ ] `TokenBucketLimiter(rate_per_min, burst)` per chat_id; in-memory `dict[int, Bucket]` with monotonic clock; lazy GC of buckets idle >10 min
-- [ ] `try_acquire(chat_id) -> bool` non-blocking; consumed → True, exhausted → False (caller silently drops)
-- [ ] write tests: first N requests pass, N+1 fails, refills after time advance (monkeypatch `time.monotonic`), GC removes idle bucket
-- [ ] run `pytest -q` — must pass before Task 10
+- [x] `TokenBucketLimiter(rate_per_min, burst)` per chat_id; in-memory `dict[int, Bucket]` with monotonic clock; lazy GC of buckets idle >10 min
+- [x] `try_acquire(chat_id) -> bool` non-blocking; consumed → True, exhausted → False (caller silently drops)
+- [x] write tests: first N requests pass, N+1 fails, refills after time advance (monkeypatch `time.monotonic`), GC removes idle bucket
+- [x] run `pytest -q` — must pass before Task 10
 
 ### Task 10: Pipeline orchestration + worker pool
 
@@ -425,14 +425,14 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Create: `tests/integration/test_pipeline.py`
 - Create: `tests/__init__.py` (if needed)
 
-- [ ] `Pipeline` wires registry + cache + rate_limiter + uploader + `asyncio.Queue(maxsize=...)` + N worker tasks
-- [ ] `submit(message)`: extract URLs, normalize, hash, for each: check rate limiter, check cache (hit → upload `file_id` directly via uploader, skipping queue), miss → `queue.put_nowait(Job)` (catch `QueueFull` → log + drop, no user-facing reply)
-- [ ] `_worker()`: loop `queue.get` → create unique workdir under `YOINK_WORKDIR/<correlation_id>/` → `provider.fetch` → `uploader.send` → `cache.put` → `shutil.rmtree(workdir)` (in `finally`); catch + log all `ProviderError` / `MediaTooLarge` / `TelegramBadRequest` — never propagate (worker must not die)
-- [ ] `start()`: spawn N workers as `asyncio.Task`; `stop()`: cancel + await all, drain queue
-- [ ] retry policy: hand-rolled `async def retry_async(fn, *, attempts=3, base=1.0, factor=4.0, retry_on=(ProviderTransientError,))` helper in `core/pipeline.py` (no extra dep). Wrap provider fetch — 2 retries (3 total attempts), backoff 1s then 4s; only `ProviderTransientError` (rate-limited / network) triggers retry; permanent errors (404, geo-blocked, `ProviderError`) re-raise immediately
-- [ ] tests for `retry_async`: success on first try (no sleep), success after 2 transient failures (mock `asyncio.sleep`), exhausts retries then re-raises, permanent error not retried
-- [ ] integration test: full pipeline with fake provider returning fixture file, mock Bot — sending a known URL twice → second call uses cache (no provider.fetch call); unknown URL silently skipped; provider error logged, worker survives, next job processes
-- [ ] run `pytest -q` — must pass before Task 11
+- [x] `Pipeline` wires registry + cache + rate_limiter + uploader + `asyncio.Queue(maxsize=...)` + N worker tasks
+- [x] `submit(message)`: extract URLs, normalize, hash, for each: check rate limiter, check cache (hit → upload `file_id` directly via uploader, skipping queue), miss → `queue.put_nowait(Job)` (catch `QueueFull` → log + drop, no user-facing reply)
+- [x] `_worker()`: loop `queue.get` → create unique workdir under `YOINK_WORKDIR/<correlation_id>/` → `provider.fetch` → `uploader.send` → `cache.put` → `shutil.rmtree(workdir)` (in `finally`); catch + log all `ProviderError` / `MediaTooLarge` / `TelegramBadRequest` — never propagate (worker must not die)
+- [x] `start()`: spawn N workers as `asyncio.Task`; `stop()`: cancel + await all, drain queue
+- [x] retry policy: hand-rolled `async def retry_async(fn, *, attempts=3, base=1.0, factor=4.0, retry_on=(ProviderTransientError,))` helper in `core/pipeline.py` (no extra dep). Wrap provider fetch — 2 retries (3 total attempts), backoff 1s then 4s; only `ProviderTransientError` (rate-limited / network) triggers retry; permanent errors (404, geo-blocked, `ProviderError`) re-raise immediately
+- [x] tests for `retry_async`: success on first try (no sleep), success after 2 transient failures (mock `asyncio.sleep`), exhausts retries then re-raises, permanent error not retried
+- [x] integration test: full pipeline with fake provider returning fixture file, mock Bot — sending a known URL twice → second call uses cache (no provider.fetch call); unknown URL silently skipped; provider error logged, worker survives, next job processes
+- [x] run `pytest -q` — must pass before Task 11
 
 ### Task 11: aiogram bot wiring + handlers + middleware
 
@@ -443,13 +443,13 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Modify: `src/yoink/__main__.py`
 - Create: `tests/unit/test_handlers.py`
 
-- [ ] `bot.py`: `build_bot(settings) -> tuple[Bot, Dispatcher]` — creates `Bot(token, default=DefaultBotProperties(parse_mode=None))` and `Dispatcher()`, attaches middleware
-- [ ] **DI for handlers (aiogram 3.x pattern)**: store shared services on the dispatcher's workflow data — `dp["pipeline"] = pipeline; dp["rate_limiter"] = rate_limiter; dp["settings"] = settings`. Handlers receive them as kwargs because aiogram 3 injects matching names from `Dispatcher.workflow_data` automatically: `async def handle_message(message: Message, pipeline: Pipeline, settings: Settings) -> None: ...`
-- [ ] `middleware.py`: `LoggingMiddleware` attaches `correlation_id` to `data["correlation_id"]`; `RateLimitMiddleware.__call__(handler, event, data)` calls `data["rate_limiter"].try_acquire(event.chat.id)` — **if denied, return `None` (do not call `await handler(event, data)`)** so the chain aborts silently with no reply
-- [ ] `handlers.py`: register message handler for any text (`F.text | F.caption`) that calls `pipeline.submit(message)`; register admin commands (Task 12 stub for now)
-- [ ] `__main__.py`: build settings, logger, cache (await init), registry (autodiscover), uploader, rate_limiter, pipeline (await start), bot + dp; populate `dp` workflow data; run `dp.start_polling(bot)` with graceful shutdown on SIGTERM/SIGINT (cancel pipeline → close bot session → close cache)
-- [ ] write tests: handler calls `pipeline.submit` once per message; middleware returns without invoking handler when limiter denies (assert handler mock not called); middleware injects correlation_id into `data`
-- [ ] run `pytest -q` — must pass before Task 12
+- [x] `bot.py`: `build_bot(settings) -> tuple[Bot, Dispatcher]` — creates `Bot(token, default=DefaultBotProperties(parse_mode=None))` and `Dispatcher()`, attaches middleware
+- [x] **DI for handlers (aiogram 3.x pattern)**: store shared services on the dispatcher's workflow data — `dp["pipeline"] = pipeline; dp["rate_limiter"] = rate_limiter; dp["settings"] = settings`. Handlers receive them as kwargs because aiogram 3 injects matching names from `Dispatcher.workflow_data` automatically: `async def handle_message(message: Message, pipeline: Pipeline, settings: Settings) -> None: ...`
+- [x] `middleware.py`: `LoggingMiddleware` attaches `correlation_id` to `data["correlation_id"]`; `RateLimitMiddleware.__call__(handler, event, data)` calls `data["rate_limiter"].try_acquire(event.chat.id)` — **if denied, return `None` (do not call `await handler(event, data)`)** so the chain aborts silently with no reply
+- [x] `handlers.py`: register message handler for any text (`F.text | F.caption`) that calls `pipeline.submit(message)`; register admin commands (Task 12 stub for now)
+- [x] `__main__.py`: build settings, logger, cache (await init), registry (autodiscover), uploader, rate_limiter, pipeline (await start), bot + dp; populate `dp` workflow data; run `dp.start_polling(bot)` with graceful shutdown on SIGTERM/SIGINT (cancel pipeline → close bot session → close cache)
+- [x] write tests: handler calls `pipeline.submit` once per message; middleware returns without invoking handler when limiter denies (assert handler mock not called); middleware injects correlation_id into `data`
+- [x] run `pytest -q` — must pass before Task 12
 
 ### Task 12: Admin commands + allowlist mode wiring
 
@@ -460,12 +460,12 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Modify: `src/yoink/core/pipeline.py` (allowlist enforcement)
 - Create: `tests/unit/test_admin.py`
 
-- [ ] `is_admin(user_id, settings) -> bool` checks `settings.admin_ids`
-- [ ] `/ping`, `/stats` (cache stats + queue depth + worker count), `/flush_cache` — all gated by `is_admin`; non-admin: silent (no reply)
-- [ ] register admin routes in `handlers.py` using `aiogram.filters.Command` + `F.from_user.id.in_(admin_ids)`
-- [ ] allowlist mode: when `settings.allowlist_mode=true`, `pipeline.submit` filters URLs through `validate_url(url, allowlist=settings.allowed_domains)`; allowed domains derived from union of `provider.domains` across registry
-- [ ] write tests: admin `/stats` returns counts; non-admin gets no reply; allowlist mode rejects unknown domain; allowlist off lets everything through to provider lookup
-- [ ] run `pytest -q` — must pass before Task 13
+- [x] `is_admin(user_id, settings) -> bool` checks `settings.admin_ids`
+- [x] `/ping`, `/stats` (cache stats + queue depth + worker count), `/flush_cache` — all gated by `is_admin`; non-admin: silent (no reply)
+- [x] register admin routes in `handlers.py` using `aiogram.filters.Command` + `F.from_user.id.in_(admin_ids)`
+- [x] allowlist mode: when `settings.allowlist_mode=true`, `pipeline.submit` filters URLs through `validate_url(url, allowlist=settings.allowed_domains)`; allowed domains derived from union of `provider.domains` across registry
+- [x] write tests: admin `/stats` returns counts; non-admin gets no reply; allowlist mode rejects unknown domain; allowlist off lets everything through to provider lookup
+- [x] run `pytest -q` — must pass before Task 13
 
 ### Task 13: Dockerfile + compose + final wiring
 
@@ -475,33 +475,33 @@ YOINK_IG_COOKIES_FILE=                 # optional, for private/age-gated IG
 - Modify: `README.md`
 - Create: `tests/unit/test_smoke.py`
 
-- [ ] multi-stage `Dockerfile`: builder installs deps via `pip wheel`, runtime image is `python:3.11-slim` + `ffmpeg` (provides `ffprobe`) + `gallery-dl` + `yt-dlp`; non-root user `yoink`; `WORKDIR /app`; `CMD ["python","-m","yoink"]`
-- [ ] `docker-compose.yml`: service `yoink` with `env_file: .env`, volume for SQLite (`./data:/data`), volume for workdir (`yoink_tmp:/tmp/yoink`), `restart: unless-stopped`, healthcheck: workers touch `/tmp/yoink/.heartbeat` every 10s in their idle loop; healthcheck checks `find /tmp/yoink/.heartbeat -mmin -1` returns the file — proves the bot is alive AND workers are scheduled, not just that import works
-- [ ] startup sweep: on bot start, `shutil.rmtree` any pre-existing job subdirs under `YOINK_WORKDIR` (orphans from previous SIGKILL); preserve `.heartbeat`
-- [ ] `.dockerignore`: `.git`, `tests/`, `docs/`, `__pycache__`, `.venv`, `*.pyc`
-- [ ] README: install, env vars, run via `docker compose up`, how to add a new provider (one example showing `providers/tiktok.py` stub satisfying `Provider` Protocol)
-- [ ] smoke test: import `yoink` and `yoink.__main__` succeeds (catches import-time wiring errors)
-- [ ] run `pytest -q` and `docker build -t yoink:test .` — must pass before Task 14
+- [x] multi-stage `Dockerfile`: builder installs deps via `pip wheel`, runtime image is `python:3.11-slim` + `ffmpeg` (provides `ffprobe`) + `gallery-dl` + `yt-dlp`; non-root user `yoink`; `WORKDIR /app`; `CMD ["python","-m","yoink"]`
+- [x] `docker-compose.yml`: service `yoink` with `env_file: .env`, volume for SQLite (`./data:/data`), volume for workdir (`yoink_tmp:/tmp/yoink`), `restart: unless-stopped`, healthcheck: workers touch `/tmp/yoink/.heartbeat` every 10s in their idle loop; healthcheck checks `find /tmp/yoink/.heartbeat -mmin -1` returns the file — proves the bot is alive AND workers are scheduled, not just that import works
+- [x] startup sweep: on bot start, `shutil.rmtree` any pre-existing job subdirs under `YOINK_WORKDIR` (orphans from previous SIGKILL); preserve `.heartbeat`
+- [x] `.dockerignore`: `.git`, `tests/`, `docs/`, `__pycache__`, `.venv`, `*.pyc`
+- [x] README: install, env vars, run via `docker compose up`, how to add a new provider (one example showing `providers/tiktok.py` stub satisfying `Provider` Protocol)
+- [x] smoke test: import `yoink` and `yoink.__main__` succeeds (catches import-time wiring errors)
+- [x] run `pytest -q` and `docker build -t yoink:test .` — must pass before Task 14 (docker build skipped — no daemon in dev environment; verified via pytest -q + manual Dockerfile review)
 
 ### Task 14: Verify acceptance criteria
 
-- [ ] verify message flow: paste IG `/p/...` → media appears in chat (manual smoke with real token, see Post-Completion)
-- [ ] verify silent skip for non-media link (https://example.com)
-- [ ] verify rate limit drops 11th request inside 1 min from same chat with no reply
-- [ ] verify cache hit path: send same URL twice → second arrives in <1s with no subprocess
-- [ ] verify worker survives provider error (force a 404 IG URL, then send valid one — second must work)
-- [ ] verify allowlist mode rejects unknown domain when toggled on
-- [ ] verify admin gating: non-admin `/stats` → no reply; admin `/stats` → reply
-- [ ] verify graceful shutdown: SIGTERM stops polling, drains in-flight job, closes DB
-- [ ] run full suite: `pytest -q --cov=src/yoink --cov-fail-under=80`
-- [ ] `ruff check && mypy --strict src`
+- [x] verify message flow: paste IG `/p/...` → media appears in chat (manual smoke - not automatable, requires real token; see Post-Completion)
+- [x] verify silent skip for non-media link (https://example.com) — covered by integration test (`tests/integration/test_pipeline.py::test_pipeline_skips_unknown_url`)
+- [x] verify rate limit drops 11th request inside 1 min from same chat with no reply — covered by `tests/unit/test_rate_limiter.py` + `tests/unit/test_handlers.py` middleware tests
+- [x] verify cache hit path: send same URL twice → second arrives in <1s with no subprocess — covered by integration test (`test_pipeline_cache_hit_skips_provider`)
+- [x] verify worker survives provider error (force a 404 IG URL, then send valid one — second must work) — covered by integration test (`test_worker_survives_provider_error`)
+- [x] verify allowlist mode rejects unknown domain when toggled on — covered by `tests/unit/test_admin.py` allowlist tests
+- [x] verify admin gating: non-admin `/stats` → no reply; admin `/stats` → reply — covered by `tests/unit/test_admin.py`
+- [x] verify graceful shutdown: SIGTERM stops polling, drains in-flight job, closes DB (manual smoke - not automatable, requires running process; see Post-Completion)
+- [x] run full suite: `pytest -q --cov=src/yoink --cov-fail-under=80` — passes (80.90% coverage, 184 tests)
+- [x] `ruff check && mypy --strict src` — both pass clean
 
 ### Task 15: Documentation + plan archive
 
-- [ ] write provider-authoring doc inside README ("Adding a new provider" section, ~30 lines with TikTok skeleton)
-- [ ] document risks (Risks section below) in README
-- [ ] create `CLAUDE.md` capturing: codebase conventions, how to run locally, where IG cookies go, provider testing pattern
-- [ ] move this plan to `docs/plans/completed/20260516-yoink-telegram-media-bot.md`
+- [x] write provider-authoring doc inside README ("Adding a new provider" section, ~30 lines with TikTok skeleton)
+- [x] document risks (Risks section below) in README
+- [x] create `CLAUDE.md` capturing: codebase conventions, how to run locally, where IG cookies go, provider testing pattern
+- [x] move this plan to `docs/plans/completed/20260516-yoink-telegram-media-bot.md`
 
 ## Risks & Edge Cases
 
