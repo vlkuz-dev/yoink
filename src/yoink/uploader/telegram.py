@@ -87,6 +87,20 @@ def _chunks(seq: list[T], size: int) -> list[list[T]]:
     return [seq[i : i + size] for i in range(0, len(seq), size)]
 
 
+def _media_group_chunks(seq: list[T], size: int = _MEDIA_GROUP_MAX) -> list[list[T]]:
+    """Chunk for `send_media_group`: each chunk has 2..size items.
+
+    Telegram rejects media groups with <2 items. If the naive split would
+    leave a trailing chunk of size 1, rebalance the previous chunk to give
+    it one item (e.g. [10, 1] -> [9, 2]).
+    """
+    chunks = _chunks(seq, size)
+    if len(chunks) >= 2 and len(chunks[-1]) == 1:
+        moved = chunks[-2].pop()
+        chunks[-1].insert(0, moved)
+    return chunks
+
+
 def _path_for(item: MediaItem | None) -> Path | None:
     return item.path if item is not None else None
 
@@ -236,7 +250,7 @@ class TelegramUploader:
         caption: str | None,
     ) -> bool:
         caption_used = False
-        for chunk_idx, chunk in enumerate(_chunks(groupable, _MEDIA_GROUP_MAX)):
+        for chunk_idx, chunk in enumerate(_media_group_chunks(groupable)):
             media_list: list[
                 InputMediaAudio
                 | InputMediaDocument
@@ -347,7 +361,7 @@ class TelegramUploader:
         out: dict[int, CachedFile],
     ) -> bool:
         caption_used = False
-        for chunk_idx, chunk in enumerate(_chunks(groupable, _MEDIA_GROUP_MAX)):
+        for chunk_idx, chunk in enumerate(_media_group_chunks(groupable)):
             media_list: list[
                 InputMediaAudio
                 | InputMediaDocument

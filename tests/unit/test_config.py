@@ -21,7 +21,7 @@ def test_defaults_applied(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.download_timeout_s == 90
     assert s.max_file_mb == 50
     assert s.rate_per_chat_per_min == 10
-    assert s.allowlist_mode is False
+    assert s.allowlist_mode is True
     assert s.admin_ids == frozenset()
     assert s.cache_db == Path("/data/yoink.sqlite")
     assert s.workdir == Path("/tmp/yoink")

@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     max_file_mb: int = Field(default=50, ge=1, le=2048)
     rate_per_chat_per_min: int = Field(default=10, ge=1)
 
-    allowlist_mode: bool = False
+    allowlist_mode: bool = True
     admin_ids: Annotated[frozenset[int], NoDecode] = frozenset()
 
     cache_db: Path = Path("/data/yoink.sqlite")

@@ -9,14 +9,25 @@ import structlog
 
 LogFormat = Literal["json", "console"]
 
-_SECRET_KEYS = frozenset({"bot_token", "token", "cookies", "cookie", "authorization"})
+_SECRET_SUBSTRINGS: tuple[str, ...] = (
+    "token",
+    "cookie",
+    "authorization",
+    "password",
+    "secret",
+    "api_key",
+    "apikey",
+    "credential",
+    "auth",
+)
 
 
 def _redact_secrets(
     _logger: Any, _name: str, event_dict: MutableMapping[str, Any]
 ) -> MutableMapping[str, Any]:
     for key in list(event_dict.keys()):
-        if key.lower() in _SECRET_KEYS:
+        lk = key.lower()
+        if any(needle in lk for needle in _SECRET_SUBSTRINGS):
             event_dict[key] = "***"
     return event_dict
 

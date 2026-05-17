@@ -8,7 +8,7 @@ import shutil
 import time
 from typing import TYPE_CHECKING, Literal, TypeVar
 
-from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramRetryAfter
 
 from yoink.cache.store import hash_url
 from yoink.core.errors import MediaTooLarge, ProviderError, ProviderTransientError
@@ -237,7 +237,7 @@ class Pipeline:
                 )
                 return "retry_free"
             _log.exception("cache_resend_failed", url=redacted, chat_id=chat_id)
-            return "served"
+            return "retry_paid"
         except MediaTooLarge:
             # cached file_id rejected as too-big -> entry is unusable;
             # invalidate so the next attempt re-fetches.
@@ -261,6 +261,23 @@ class Pipeline:
             except (ProviderError, MediaTooLarge, TelegramBadRequest):
                 _log.exception(
                     "job_failed",
+                    url=redact_url(job.url),
+                    chat_id=job.chat_id,
+                    correlation_id=job.correlation_id,
+                    worker=worker_id,
+                )
+            except TelegramRetryAfter as exc:
+                _log.warning(
+                    "job_flood_wait_exhausted",
+                    url=redact_url(job.url),
+                    chat_id=job.chat_id,
+                    correlation_id=job.correlation_id,
+                    worker=worker_id,
+                    retry_after=getattr(exc, "retry_after", None),
+                )
+            except TelegramAPIError:
+                _log.exception(
+                    "job_api_error",
                     url=redact_url(job.url),
                     chat_id=job.chat_id,
                     correlation_id=job.correlation_id,
