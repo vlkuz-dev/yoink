@@ -14,11 +14,17 @@ from yoink.middleware import LoggingMiddleware
 _CHAT_ID = 555
 
 
-def _make_message(text: str = "hello", *, message_id: int = 1) -> Message:
+def _make_message(
+    text: str = "hello",
+    *,
+    message_id: int = 1,
+    chat_id: int = _CHAT_ID,
+    chat_type: str = "private",
+) -> Message:
     return Message(
         message_id=message_id,
         date=datetime.now(UTC),
-        chat=Chat(id=_CHAT_ID, type="private"),
+        chat=Chat(id=chat_id, type=chat_type),
         text=text,
     )
 
@@ -39,7 +45,7 @@ async def test_handler_calls_pipeline_submit_once() -> None:
     pipeline.submit = AsyncMock(return_value=None)
 
     dp = Dispatcher()
-    dp.include_router(build_router())
+    dp.include_router(build_router(frozenset({_CHAT_ID})))
     dp["pipeline"] = pipeline
 
     msg = _make_message("https://instagram.com/p/abc")
@@ -56,13 +62,59 @@ async def test_handler_swallows_submit_exception() -> None:
     pipeline.submit = AsyncMock(side_effect=RuntimeError("boom"))
 
     dp = Dispatcher()
-    dp.include_router(build_router())
+    dp.include_router(build_router(frozenset({_CHAT_ID})))
     dp["pipeline"] = pipeline
 
     msg = _make_message("https://instagram.com/p/x")
     # Should not propagate
     await _propagate(dp, _make_update(msg))
     pipeline.submit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_router_handles_message_from_allowlisted_chat() -> None:
+    pipeline = MagicMock()
+    pipeline.submit = AsyncMock(return_value=None)
+
+    allowed = -4899777325
+    dp = Dispatcher()
+    dp.include_router(build_router(frozenset({allowed})))
+    dp["pipeline"] = pipeline
+
+    msg = _make_message("https://instagram.com/p/x", chat_id=allowed, chat_type="supergroup")
+    await _propagate(dp, _make_update(msg))
+
+    pipeline.submit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_router_skips_message_from_non_allowlisted_chat() -> None:
+    pipeline = MagicMock()
+    pipeline.submit = AsyncMock(return_value=None)
+
+    dp = Dispatcher()
+    dp.include_router(build_router(frozenset({-4899777325})))
+    dp["pipeline"] = pipeline
+
+    msg = _make_message("https://instagram.com/p/x", chat_id=-1, chat_type="supergroup")
+    await _propagate(dp, _make_update(msg))
+
+    pipeline.submit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_router_skips_all_when_allowlist_empty() -> None:
+    pipeline = MagicMock()
+    pipeline.submit = AsyncMock(return_value=None)
+
+    dp = Dispatcher()
+    dp.include_router(build_router())
+    dp["pipeline"] = pipeline
+
+    msg = _make_message("https://instagram.com/p/x", chat_id=_CHAT_ID)
+    await _propagate(dp, _make_update(msg))
+
+    pipeline.submit.assert_not_awaited()
 
 
 @pytest.mark.asyncio

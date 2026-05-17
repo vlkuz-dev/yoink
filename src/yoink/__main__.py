@@ -65,7 +65,7 @@ async def _run() -> int:
             loop.add_signal_handler(sig, stop_event.set)
 
     poll_task = asyncio.create_task(
-        dp.start_polling(bot, handle_signals=False),
+        dp.start_polling(bot, handle_signals=False, allowed_updates=["message"]),
         name="yoink-polling",
     )
     stop_task = asyncio.create_task(stop_event.wait(), name="yoink-stop")
