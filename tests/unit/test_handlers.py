@@ -76,7 +76,7 @@ async def test_router_handles_message_from_allowlisted_chat() -> None:
     pipeline = MagicMock()
     pipeline.submit = AsyncMock(return_value=None)
 
-    allowed = -4899777325
+    allowed = -1001234567890
     dp = Dispatcher()
     dp.include_router(build_router(frozenset({allowed})))
     dp["pipeline"] = pipeline
@@ -93,7 +93,7 @@ async def test_router_skips_message_from_non_allowlisted_chat() -> None:
     pipeline.submit = AsyncMock(return_value=None)
 
     dp = Dispatcher()
-    dp.include_router(build_router(frozenset({-4899777325})))
+    dp.include_router(build_router(frozenset({-1001234567890})))
     dp["pipeline"] = pipeline
 
     msg = _make_message("https://instagram.com/p/x", chat_id=-1, chat_type="supergroup")
