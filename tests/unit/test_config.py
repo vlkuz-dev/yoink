@@ -65,11 +65,11 @@ def test_admin_ids_rejects_non_int(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_chat_allowlist_parses_signed_ints(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("YOINK_BOT_TOKEN", "t")
-    monkeypatch.setenv("YOINK_CHAT_ALLOWLIST", "-4899777325, 123 , -100200300400")
+    monkeypatch.setenv("YOINK_CHAT_ALLOWLIST", "-1001234567890, 123 , -100200300400")
 
     s = Settings()  # type: ignore[call-arg]
 
-    assert s.chat_allowlist == frozenset({-4899777325, 123, -100200300400})
+    assert s.chat_allowlist == frozenset({-1001234567890, 123, -100200300400})
     assert isinstance(s.chat_allowlist, frozenset)
 
 
