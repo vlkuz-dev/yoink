@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 from pathlib import Path
@@ -117,3 +118,36 @@ class TestRunSubprocess:
     async def test_non_positive_timeout_rejected(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="timeout"):
             await run_subprocess([sys.executable, "-V"], cwd=tmp_path, timeout_s=0)
+
+    async def test_cancellation_kills_subprocess(self, tmp_path: Path) -> None:
+        marker = tmp_path / "child.pid"
+        cmd = _py(
+            "import os, sys, time",
+            f"open({str(marker)!r}, 'w').write(str(os.getpid()))",
+            "sys.stdout.flush()",
+            "time.sleep(30)",
+        )
+
+        task = asyncio.create_task(
+            run_subprocess(cmd, cwd=tmp_path, timeout_s=30.0)
+        )
+
+        for _ in range(50):
+            if marker.exists():
+                break
+            await asyncio.sleep(0.05)
+        assert marker.exists(), "child did not start"
+        pid = int(marker.read_text())
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        for _ in range(50):
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            await asyncio.sleep(0.05)
+        else:
+            raise AssertionError(f"subprocess {pid} still alive after cancel")

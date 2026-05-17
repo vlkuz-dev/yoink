@@ -65,6 +65,11 @@ async def run_subprocess(
         with contextlib.suppress(ProcessLookupError):
             await proc.wait()
         raise SubprocessTimeoutError(cmd, timeout_s) from None
+    except asyncio.CancelledError:
+        proc.kill()
+        with contextlib.suppress(ProcessLookupError):
+            await proc.wait()
+        raise
 
     duration = loop.time() - start
     return SubprocessResult(
