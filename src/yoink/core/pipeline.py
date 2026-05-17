@@ -11,7 +11,12 @@ from typing import TYPE_CHECKING, Literal, TypeVar
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramRetryAfter
 
 from yoink.cache.store import hash_url
-from yoink.core.errors import MediaTooLarge, ProviderError, ProviderTransientError
+from yoink.core.errors import (
+    CookiesExpired,
+    MediaTooLarge,
+    ProviderError,
+    ProviderTransientError,
+)
 from yoink.core.models import Job
 from yoink.downloader.safety import UnsafeURLError, redact_url, validate_url
 from yoink.extractor.urls import extract_urls
@@ -23,9 +28,11 @@ if TYPE_CHECKING:
 
     from aiogram.types import Message
 
+    from yoink.admin.notifier import AdminNotifier
     from yoink.cache.store import CachedFile, FileIdCache
     from yoink.core.rate_limiter import TokenBucketLimiter
     from yoink.core.registry import ProviderRegistry
+    from yoink.providers.cookie_health import CookieHealth
     from yoink.uploader.telegram import TelegramUploader
 
     SleepFn = Callable[[float], Awaitable[None]]
@@ -119,6 +126,8 @@ class Pipeline:
         retry_sleep: SleepFn | None = None,
         allowlist: frozenset[str] | None = None,
         heartbeat_interval_s: float = 10.0,
+        notifier: AdminNotifier | None = None,
+        cookie_health: CookieHealth | None = None,
     ) -> None:
         if workers < 1:
             raise ValueError("workers must be >= 1")
@@ -137,6 +146,8 @@ class Pipeline:
         self._retry_factor = retry_factor
         self._retry_sleep = retry_sleep
         self._allowlist = allowlist
+        self._notifier = notifier
+        self._cookie_health = cookie_health
 
     @property
     def queue_depth(self) -> int:
@@ -266,6 +277,23 @@ class Pipeline:
             job = await self._queue.get()
             try:
                 await self._process(job)
+            except CookiesExpired as exc:
+                _log.warning(
+                    "cookies_expired",
+                    url=redact_url(job.url),
+                    chat_id=job.chat_id,
+                    correlation_id=job.correlation_id,
+                    worker=worker_id,
+                    reason=exc.reason,
+                )
+                if self._notifier is not None and self._cookie_health is not None:
+                    try:
+                        await self._notifier.notify_cookies_expired(
+                            self._cookie_health,
+                            reason=exc.reason or "unknown",
+                        )
+                    except Exception:
+                        _log.exception("notifier_failed")
             except (ProviderError, MediaTooLarge, TelegramBadRequest):
                 _log.exception(
                     "job_failed",

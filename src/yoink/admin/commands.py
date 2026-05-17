@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from aiogram import F, Router
@@ -13,6 +15,7 @@ if TYPE_CHECKING:
     from yoink.cache.store import FileIdCache
     from yoink.config import Settings
     from yoink.core.pipeline import Pipeline
+    from yoink.providers.cookie_health import CookieHealth
 
 
 _log = get_logger(__name__)
@@ -67,6 +70,54 @@ async def cmd_flush(
     await message.reply(f"flushed: {removed}")
 
 
+def _human_ago(seconds: float) -> str:
+    s = int(seconds)
+    if s < 60:
+        return f"{s}s ago"
+    if s < 3600:
+        return f"{s // 60}m ago"
+    if s < 86400:
+        return f"{s // 3600}h ago"
+    return f"{s // 86400}d ago"
+
+
+def _fmt_ts_line(label: str, ts: float | None, *, now: float | None = None) -> str:
+    if ts is None:
+        return f"{label}: (never)"
+    when = datetime.fromtimestamp(ts, tz=UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+    delta = (now if now is not None else time.time()) - ts
+    if delta < 0:
+        delta = 0
+    return f"{label}: {when} ({_human_ago(delta)})"
+
+
+async def cmd_ig_status(
+    message: Message,
+    settings: Settings,
+    cookie_health: CookieHealth,
+) -> None:
+    if not is_admin(_from_user_id(message), settings):
+        return
+    stat = cookie_health.stat()
+    state = cookie_health.state(stat)
+    lines: list[str] = ["IG cookies status"]
+    lines.append(f"path: {stat.path}" if stat.path is not None else "path: (not configured)")
+    if stat.path is not None:
+        lines.append(f"exists: {'yes' if stat.exists else 'no'}")
+        if stat.exists:
+            lines.append(f"size: {stat.size_bytes} bytes")
+            lines.append(_fmt_ts_line("mtime", stat.mtime))
+    lines.append(_fmt_ts_line("last_success", cookie_health.last_success))
+    lf = cookie_health.last_failure
+    if lf is not None:
+        ts, reason = lf
+        lines.append(f"{_fmt_ts_line('last_failure', ts)} — {reason}")
+    else:
+        lines.append("last_failure: (none)")
+    lines.append(f"state: {state}")
+    await message.reply("\n".join(lines))
+
+
 def build_admin_router(admin_ids: frozenset[int] | None = None) -> Router:
     router = Router(name="yoink.admin")
     if admin_ids is not None:
@@ -78,4 +129,5 @@ def build_admin_router(admin_ids: frozenset[int] | None = None) -> Router:
     router.message.register(cmd_ping, Command("ping"))
     router.message.register(cmd_stats, Command("stats"))
     router.message.register(cmd_flush, Command("flush_cache"))
+    router.message.register(cmd_ig_status, Command("ig_status"))
     return router
