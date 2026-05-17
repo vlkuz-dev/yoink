@@ -156,6 +156,9 @@ class Pipeline:
         reply_to = getattr(message, "message_id", None)
 
         urls = extract_urls(message)
+        if not urls:
+            _log.info("no_urls_extracted", chat_id=chat_id)
+            return
         for url in urls:
             try:
                 validate_url(url, allowlist=self._allowlist, resolve_dns=False)
@@ -169,6 +172,11 @@ class Pipeline:
                 continue
             provider = self._registry.find(url)
             if provider is None:
+                _log.info(
+                    "no_provider_for_url",
+                    url=redact_url(url),
+                    chat_id=chat_id,
+                )
                 continue
             url_hash = hash_url(url)
             cached = await self._cache.get(url_hash)
