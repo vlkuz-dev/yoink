@@ -318,7 +318,7 @@ class InstagramProvider:
     async def _run_gallery_dl(self, url: str, workdir: Path) -> list[MediaItem]:
         cmd: list[str] = [
             "gallery-dl",
-            "--no-config",
+            "--config-ignore",
             "-D",
             str(workdir),
             "--no-part",
