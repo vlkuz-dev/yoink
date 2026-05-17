@@ -349,7 +349,7 @@ async def test_gallery_dl_uses_security_flags(tmp_path: Path) -> None:
 
     cmd = rec.calls[0]
     assert cmd[0] == "gallery-dl"
-    assert "--no-config" in cmd
+    assert "--config-ignore" in cmd
     # `--` separator must precede the URL (argument-injection guard)
     assert cmd[-2] == "--"
     assert cmd[-1] == url
