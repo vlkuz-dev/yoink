@@ -88,6 +88,8 @@ async def _run() -> int:
         if poll_task.done() and not poll_task.cancelled():
             poll_exc = poll_task.exception()
         stop_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await stop_task
         await pipeline.stop()
         await bot.session.close()
         await cache.close()

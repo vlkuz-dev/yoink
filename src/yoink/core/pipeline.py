@@ -314,7 +314,9 @@ class Pipeline:
         if self._tasks:
             return
         self._workdir_root.mkdir(parents=True, exist_ok=True)
-        self.sweep_workdir()
+        removed = self.sweep_workdir()
+        if removed:
+            _log.info("workdir_swept", removed=removed)
         for i in range(self._workers):
             self._tasks.append(
                 asyncio.create_task(self._worker(i), name=f"yoink-worker-{i}"),
@@ -373,7 +375,13 @@ class Pipeline:
 
     async def _heartbeat_loop(self) -> None:
         while True:
-            self._touch_heartbeat()
+            try:
+                self._touch_heartbeat()
+            except Exception:
+                # Defensive: _touch_heartbeat already swallows OSError, but
+                # surface anything unexpected so the watchdog isn't silently
+                # killed by an unforeseen exception class.
+                _log.exception("heartbeat_loop_unexpected")
             await asyncio.sleep(self._heartbeat_interval_s)
 
     async def join(self) -> None:
