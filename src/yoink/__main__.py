@@ -70,6 +70,7 @@ async def _run() -> int:
     )
     stop_task = asyncio.create_task(stop_event.wait(), name="yoink-stop")
 
+    poll_exc: BaseException | None = None
     try:
         await asyncio.wait(
             {poll_task, stop_task},
@@ -77,14 +78,22 @@ async def _run() -> int:
         )
     finally:
         if not poll_task.done():
-            await dp.stop_polling()
-            with contextlib.suppress(asyncio.CancelledError):
+            try:
+                await dp.stop_polling()
+            except Exception as exc:
+                log.warning("stop_polling_failed", error=repr(exc))
+                poll_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await poll_task
+        if poll_task.done() and not poll_task.cancelled():
+            poll_exc = poll_task.exception()
         stop_task.cancel()
         await pipeline.stop()
         await bot.session.close()
         await cache.close()
-        log.info("yoink stopped")
+        log.info("yoink stopped", poll_error=repr(poll_exc) if poll_exc else None)
+    if poll_exc is not None:
+        raise poll_exc
     return 0
 
 
@@ -93,6 +102,9 @@ def main() -> int:
         return asyncio.run(_run())
     except KeyboardInterrupt:
         return 0
+    except Exception:
+        get_logger("yoink").exception("yoink_fatal")
+        return 1
 
 
 if __name__ == "__main__":

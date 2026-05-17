@@ -6,14 +6,14 @@ import os
 import secrets
 import shutil
 import time
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, Literal, TypeVar
 
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 
 from yoink.cache.store import hash_url
 from yoink.core.errors import MediaTooLarge, ProviderError, ProviderTransientError
 from yoink.core.models import Job
-from yoink.downloader.safety import UnsafeURLError, validate_url
+from yoink.downloader.safety import UnsafeURLError, redact_url, validate_url
 from yoink.extractor.urls import extract_urls
 from yoink.log import get_logger
 
@@ -47,6 +47,18 @@ def _is_stale_file_id(exc: TelegramBadRequest) -> bool:
 
 
 T = TypeVar("T")
+
+# Tri-state result from _serve_cached:
+#   "served"      — request fully handled by cached resend; skip job entirely.
+#   "retry_free"  — cache entry was invalid (stale file_id, too-large) and has
+#                   been deleted; queue a fresh fetch without charging the
+#                   rate-limiter (the user "earned" the attempt via the hit).
+#   "retry_paid"  — resend hit a transient Telegram-side error; cache entry is
+#                   preserved (likely still valid once API recovers), but
+#                   queue a fresh fetch only after a rate-limit check so a
+#                   wedged URL during an outage doesn't drive unbounded
+#                   provider re-fetches.
+_CacheServeResult = Literal["served", "retry_free", "retry_paid"]
 
 _log = get_logger(__name__)
 
@@ -148,23 +160,39 @@ class Pipeline:
             try:
                 validate_url(url, allowlist=self._allowlist, resolve_dns=False)
             except UnsafeURLError as exc:
-                _log.info("url_rejected", url=url, chat_id=chat_id, reason=str(exc))
+                _log.info(
+                    "url_rejected",
+                    url=redact_url(url),
+                    chat_id=chat_id,
+                    reason=str(exc),
+                )
                 continue
             provider = self._registry.find(url)
             if provider is None:
                 continue
             url_hash = hash_url(url)
             cached = await self._cache.get(url_hash)
-            if cached and await self._serve_cached(
-                chat_id=chat_id,
-                reply_to=reply_to,
-                url=url,
-                url_hash=url_hash,
-                cached=cached,
-            ):
-                continue
-            if not self._rate_limiter.try_acquire(chat_id):
-                _log.info("rate_limited", chat_id=chat_id, url=url)
+            if cached:
+                result = await self._serve_cached(
+                    chat_id=chat_id,
+                    reply_to=reply_to,
+                    url=url,
+                    url_hash=url_hash,
+                    cached=cached,
+                )
+                if result == "served":
+                    continue
+                # "retry_free": cache invalidated — fall through with no
+                # rate-limit charge; the user already "earned" the attempt
+                # via the (bad) cache hit.
+                # "retry_paid": cache preserved through a transient API
+                # error — throttle the fallback so an outage doesn't drive
+                # unbounded provider re-fetches for the same URL.
+                if result == "retry_paid" and not self._rate_limiter.try_acquire(chat_id):
+                    _log.info("rate_limited", chat_id=chat_id, url=redact_url(url))
+                    continue
+            elif not self._rate_limiter.try_acquire(chat_id):
+                _log.info("rate_limited", chat_id=chat_id, url=redact_url(url))
                 continue
             job = Job(
                 chat_id=chat_id,
@@ -176,7 +204,7 @@ class Pipeline:
             try:
                 self._queue.put_nowait(job)
             except asyncio.QueueFull:
-                _log.warning("queue_full_drop", url=url, chat_id=chat_id)
+                _log.warning("queue_full_drop", url=redact_url(url), chat_id=chat_id)
 
     async def _serve_cached(
         self,
@@ -186,10 +214,10 @@ class Pipeline:
         url: str,
         url_hash: str,
         cached: list[CachedFile],
-    ) -> bool:
-        """Re-send cached file_ids. Returns True if request handled; False
-        means the cache entry was stale and the caller should enqueue a
-        fresh fetch.
+    ) -> _CacheServeResult:
+        """Re-send cached file_ids. Returns one of `_CacheServeResult`.
+
+        See the docstring of `_CacheServeResult` for semantics of each value.
         """
         try:
             await self._uploader.send_cached(
@@ -198,30 +226,32 @@ class Pipeline:
                 files=cached,
             )
         except TelegramBadRequest as exc:
+            redacted = redact_url(url)
             if _is_stale_file_id(exc):
                 await self._cache.delete(url_hash)
                 _log.info(
                     "cache_invalidated_stale_file_id",
-                    url=url,
+                    url=redacted,
                     chat_id=chat_id,
                     detail=exc.message,
                 )
-                return False
-            _log.exception("cache_resend_failed", url=url, chat_id=chat_id)
-            return True
+                return "retry_free"
+            _log.exception("cache_resend_failed", url=redacted, chat_id=chat_id)
+            return "served"
         except MediaTooLarge:
             # cached file_id rejected as too-big -> entry is unusable;
             # invalidate so the next attempt re-fetches.
             await self._cache.delete(url_hash)
-            _log.warning("cache_resend_too_large", url=url, chat_id=chat_id)
-            return False
+            _log.warning("cache_resend_too_large", url=redact_url(url), chat_id=chat_id)
+            return "retry_free"
         except TelegramAPIError:
-            # Transient Telegram-side error on cached resend. Don't surface
-            # the cached entry as served — fall back to a fresh fetch so the
-            # user still gets media when the API recovers.
-            _log.exception("cache_resend_api_error", url=url, chat_id=chat_id)
-            return False
-        return True
+            # Transient Telegram-side error on cached resend. Cache entry is
+            # likely still valid once the API recovers, so don't invalidate.
+            # Fall back to a fresh fetch under rate-limit charge so a wedged
+            # URL during an outage can't drive unbounded provider work.
+            _log.exception("cache_resend_api_error", url=redact_url(url), chat_id=chat_id)
+            return "retry_paid"
+        return "served"
 
     async def _worker(self, worker_id: int) -> None:
         while True:
@@ -231,7 +261,7 @@ class Pipeline:
             except (ProviderError, MediaTooLarge, TelegramBadRequest):
                 _log.exception(
                     "job_failed",
-                    url=job.url,
+                    url=redact_url(job.url),
                     chat_id=job.chat_id,
                     correlation_id=job.correlation_id,
                     worker=worker_id,
@@ -239,7 +269,7 @@ class Pipeline:
             except Exception:
                 _log.exception(
                     "job_unexpected_error",
-                    url=job.url,
+                    url=redact_url(job.url),
                     chat_id=job.chat_id,
                     correlation_id=job.correlation_id,
                     worker=worker_id,
@@ -252,7 +282,7 @@ class Pipeline:
         if provider is None:
             _log.warning(
                 "provider_unavailable",
-                url=job.url,
+                url=redact_url(job.url),
                 correlation_id=job.correlation_id,
             )
             return

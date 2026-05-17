@@ -6,12 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from yoink.downloader.runner import SubprocessResult
+from yoink.downloader.runner import SubprocessResult, SubprocessTimeoutError
 from yoink.providers.base import Provider
 from yoink.providers.instagram import (
     InstagramProvider,
     MediaTooLarge,
     ProviderError,
+    ProviderTransientError,
 )
 from yoink.providers.instagram import provider as module_provider
 
@@ -263,6 +264,47 @@ async def test_both_extractors_fail_raises_provider_error(tmp_path: Path) -> Non
     msg = str(ei.value)
     assert "gallery-dl" in msg
     assert "yt-dlp" in msg
+    # ProviderError is non-retriable, so it must not also be ProviderTransientError.
+    assert not isinstance(ei.value, ProviderTransientError)
+
+
+async def test_rate_limit_stderr_marks_transient(tmp_path: Path) -> None:
+    """HTTP 429 in extractor stderr promotes the failure to retry-eligible."""
+    rec = _Recorder(
+        [
+            _result(returncode=1, stderr="HTTP Error 429: Too Many Requests"),
+            _result(returncode=1, stderr="HTTP Error 429: Too Many Requests"),
+        ],
+    )
+    p = InstagramProvider(runner=rec, probe_video_dims=False)
+    with pytest.raises(ProviderTransientError):
+        await p.fetch("https://www.instagram.com/p/LIM/", tmp_path)
+
+
+async def test_one_transient_one_permanent_is_transient(tmp_path: Path) -> None:
+    """If either extractor failed transiently, the combined fetch is retry-eligible."""
+    rec = _Recorder(
+        [
+            _result(returncode=1, stderr="login required"),  # permanent
+            SubprocessTimeoutError(["yt-dlp"], 30.0),  # transient
+        ],
+    )
+    p = InstagramProvider(runner=rec, probe_video_dims=False)
+    with pytest.raises(ProviderTransientError):
+        await p.fetch("https://www.instagram.com/p/MIX/", tmp_path)
+
+
+async def test_5xx_stderr_marks_transient(tmp_path: Path) -> None:
+    """Upstream 5xx in stderr is treated as transient."""
+    rec = _Recorder(
+        [
+            _result(returncode=1, stderr="login required"),  # permanent
+            _result(returncode=1, stderr="HTTP Error 503: Service Unavailable"),
+        ],
+    )
+    p = InstagramProvider(runner=rec, probe_video_dims=False)
+    with pytest.raises(ProviderTransientError):
+        await p.fetch("https://www.instagram.com/p/SVC/", tmp_path)
 
 
 async def test_media_too_large_raised(tmp_path: Path) -> None:

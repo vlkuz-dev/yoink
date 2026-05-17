@@ -16,6 +16,7 @@ from yoink.downloader.runner import (
     SubprocessTimeoutError,
     run_subprocess,
 )
+from yoink.downloader.safety import redact_text, redact_url
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
@@ -44,6 +45,10 @@ class _Runner(Protocol):
 
 class _ToolFailed(Exception):  # noqa: N818  # internal sentinel, not surfaced
     """Internal: one extractor exhausted its options; try the next."""
+
+    def __init__(self, message: str, *, transient: bool = False) -> None:
+        super().__init__(message)
+        self.transient = transient
 
 
 _VIDEO_EXTS: frozenset[str] = frozenset({"mp4", "mov", "m4v", "webm", "mkv"})
@@ -74,6 +79,38 @@ _TRAILING_NUM_RE: re.Pattern[str] = re.compile(r"_(\d+)$")
 
 _STDERR_PEEK = 512
 _DEFAULT_DOWNLOAD_TIMEOUT_S = 90.0
+
+# Substrings (case-insensitive) in extractor stderr that indicate a
+# transient failure (rate limit, network glitch, upstream 5xx). Matching
+# any of these promotes a non-zero subprocess exit from permanent to
+# retry-eligible so the pipeline's `ProviderTransientError` backoff applies.
+_TRANSIENT_STDERR_MARKERS: tuple[str, ...] = (
+    "http error 429",
+    "429 too many requests",
+    "429 client error",
+    "rate limit",
+    "rate-limit",
+    "rate limited",
+    "too many requests",
+    "http error 5",
+    "http error 408",
+    "http error 425",
+    "connection reset",
+    "connection refused",
+    "connection aborted",
+    "network is unreachable",
+    "temporarily unavailable",
+    "service unavailable",
+    "remote end closed connection",
+    "timed out",
+    "read timeout",
+    "name or service not known",
+)
+
+
+def _is_transient_stderr(stderr: str) -> bool:
+    text = stderr.lower()
+    return any(marker in text for marker in _TRANSIENT_STDERR_MARKERS)
 
 
 def _kind_for_ext(ext: str) -> tuple[MediaKind, str | None]:
@@ -233,11 +270,13 @@ class InstagramProvider:
         self._purge_workdir(workdir)
 
         primary_err: str | None = None
+        primary_transient = False
         items: list[MediaItem] = []
         try:
             items = await self._run_gallery_dl(url, workdir)
         except _ToolFailed as exc:
             primary_err = str(exc)
+            primary_transient = exc.transient
 
         if not items:
             # Purge gallery-dl partials so yt-dlp's _collect_items doesn't
@@ -246,14 +285,25 @@ class InstagramProvider:
             try:
                 items = await self._run_yt_dlp(url, workdir)
             except _ToolFailed as exc:
+                # If either extractor failed transiently, the combined fetch
+                # is retry-eligible: backoff + retry may let the transient
+                # tool succeed (the permanent-failing one will still fail,
+                # but the surviving path is enough for the user).
+                redacted = redact_url(url)
+                if primary_transient or exc.transient:
+                    raise ProviderTransientError(
+                        "extractor transient-failed for "
+                        f"{redacted}: gallery-dl={primary_err!r}, yt-dlp={exc!s}",
+                        url=url,
+                    ) from exc
                 raise ProviderError(
                     "both extractors failed for "
-                    f"{url}: gallery-dl={primary_err!r}, yt-dlp={exc!s}",
+                    f"{redacted}: gallery-dl={primary_err!r}, yt-dlp={exc!s}",
                     url=url,
                 ) from exc
 
         if not items:
-            raise ProviderError(f"no media items extracted from {url}", url=url)
+            raise ProviderError(f"no media items extracted from {redact_url(url)}", url=url)
 
         for item in items:
             self._enforce_size(item.path)
@@ -288,10 +338,13 @@ class InstagramProvider:
         try:
             res = await self._runner(cmd, cwd=workdir, timeout_s=timeout)
         except SubprocessTimeoutError as exc:
-            raise _ToolFailed(f"gallery-dl timeout after {timeout}s") from exc
+            raise _ToolFailed(
+                f"gallery-dl timeout after {timeout}s", transient=True
+            ) from exc
         if res.returncode != 0:
             raise _ToolFailed(
-                f"gallery-dl rc={res.returncode}: {res.stderr[:_STDERR_PEEK]}",
+                f"gallery-dl rc={res.returncode}: {redact_text(res.stderr[:_STDERR_PEEK])}",
+                transient=_is_transient_stderr(res.stderr),
             )
 
         items = await self._collect_items(workdir)
@@ -318,10 +371,13 @@ class InstagramProvider:
         try:
             res = await self._runner(cmd, cwd=workdir, timeout_s=timeout)
         except SubprocessTimeoutError as exc:
-            raise _ToolFailed(f"yt-dlp timeout after {timeout}s") from exc
+            raise _ToolFailed(
+                f"yt-dlp timeout after {timeout}s", transient=True
+            ) from exc
         if res.returncode != 0:
             raise _ToolFailed(
-                f"yt-dlp rc={res.returncode}: {res.stderr[:_STDERR_PEEK]}",
+                f"yt-dlp rc={res.returncode}: {redact_text(res.stderr[:_STDERR_PEEK])}",
+                transient=_is_transient_stderr(res.stderr),
             )
 
         items = await self._collect_items(workdir)

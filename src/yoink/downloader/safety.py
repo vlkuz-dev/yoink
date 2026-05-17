@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 import socket
 import unicodedata
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -155,6 +156,62 @@ def validate_url(
         port=port,
         resolved_ips=resolved,
     )
+
+
+def redact_url(url: str) -> str:
+    """Return a log-safe URL with userinfo, query, and fragment scrubbed.
+
+    Query strings and fragments can carry credentials (OAuth tokens,
+    presigned-URL signatures, session IDs). The redactor preserves
+    scheme/host/path so logs stay debuggable while never echoing secrets.
+    """
+    if not isinstance(url, str) or not url:
+        return "<empty>"
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return "<unparseable>"
+    host = parts.hostname or ""
+    try:
+        port = parts.port
+    except ValueError:
+        # Malformed port (e.g. "abc"); drop it from the redacted form.
+        port = None
+    netloc = f"{host}:{port}" if port else host
+    query = "REDACTED" if parts.query else ""
+    fragment = "REDACTED" if parts.fragment else ""
+    return urlunsplit((parts.scheme, netloc, parts.path, query, fragment))
+
+
+_URL_IN_TEXT_RE: re.Pattern[str] = re.compile(
+    r"https?://[^\s\"'<>`]+",
+    re.IGNORECASE,
+)
+_URL_TRAILING_PUNCT = ".,;:!?)]}>"
+
+
+def redact_text(text: str) -> str:
+    """Redact http(s) URLs embedded in arbitrary text (e.g. subprocess stderr).
+
+    Each URL match is rewritten via `redact_url`, scrubbing query strings,
+    fragments, and userinfo. Lets us safely include extractor stderr in
+    exception messages without leaking presigned-URL signatures or session
+    tokens via `_log.exception` tracebacks.
+    """
+    if not isinstance(text, str) or not text:
+        return text
+
+    def _replace(match: re.Match[str]) -> str:
+        raw = match.group(0)
+        trail = ""
+        while raw and raw[-1] in _URL_TRAILING_PUNCT:
+            trail = raw[-1] + trail
+            raw = raw[:-1]
+        if not raw:
+            return trail
+        return redact_url(raw) + trail
+
+    return _URL_IN_TEXT_RE.sub(_replace, text)
 
 
 def sanitize_filename(name: str) -> str:

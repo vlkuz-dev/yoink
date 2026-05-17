@@ -4,6 +4,7 @@ import pytest
 
 from yoink.downloader.safety import (
     UnsafeURLError,
+    redact_url,
     sanitize_filename,
     validate_url,
 )
@@ -225,3 +226,49 @@ class TestSanitizeFilename:
 
     def test_keeps_normal_filename(self) -> None:
         assert sanitize_filename("photo_01.jpg") == "photo_01.jpg"
+
+
+class TestRedactURL:
+    def test_strips_userinfo(self) -> None:
+        out = redact_url("http://user:pass@example.com/path")
+        assert "user" not in out
+        assert "pass" not in out
+        assert "example.com" in out
+
+    def test_handles_malformed_port(self) -> None:
+        # Malformed port must not crash the redactor — pipeline logs
+        # rejected URLs through this helper, and a crash there would
+        # mask the original UnsafeURLError.
+        out = redact_url("http://user:pass@example.com:abc/path")
+        assert "user" not in out
+        assert "pass" not in out
+        assert "example.com" in out
+
+    def test_preserves_url_without_secrets(self) -> None:
+        assert redact_url("https://example.com/x") == "https://example.com/x"
+
+    def test_scrubs_query_string(self) -> None:
+        out = redact_url("https://example.com/cb?access_token=abc123&state=xyz")
+        assert "abc123" not in out
+        assert "access_token" not in out
+        assert "state" not in out
+        assert "example.com" in out
+        assert "/cb" in out
+        assert "REDACTED" in out
+
+    def test_scrubs_fragment(self) -> None:
+        out = redact_url("https://example.com/p#token=secret")
+        assert "secret" not in out
+        assert "token" not in out
+        assert "example.com" in out
+        assert "REDACTED" in out
+
+    def test_scrubs_query_with_userinfo(self) -> None:
+        out = redact_url("https://u:p@example.com/cb?sig=topsecret")
+        assert "u" not in out.split("//", 1)[1].split("/", 1)[0]
+        assert "p@" not in out
+        assert "topsecret" not in out
+        assert "example.com" in out
+
+    def test_handles_empty(self) -> None:
+        assert redact_url("") == "<empty>"
