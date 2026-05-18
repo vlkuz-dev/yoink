@@ -17,7 +17,7 @@ def build_router(chat_allowlist: frozenset[int] = frozenset()) -> Router:
     router.message.filter(F.chat.id.in_(chat_allowlist))
     log = get_logger(__name__)
 
-    @router.message(F.text | F.caption)
+    @router.message(F.text)
     async def handle_media_message(message: Message, pipeline: Pipeline) -> None:
         if message.forward_origin is not None or message.forward_date is not None:
             log.info("skip_forward", chat_id=message.chat.id)
