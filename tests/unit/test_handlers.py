@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiogram import Dispatcher
-from aiogram.types import Chat, Message, Update
+from aiogram.types import Chat, Message, MessageOriginUser, PhotoSize, Update, User, Video
 
 from yoink.handlers import build_router
 from yoink.middleware import LoggingMiddleware
@@ -99,6 +99,98 @@ async def test_router_skips_message_from_non_allowlisted_chat() -> None:
     msg = _make_message("https://instagram.com/p/x", chat_id=-1, chat_type="supergroup")
     await _propagate(dp, _make_update(msg))
 
+    pipeline.submit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_router_skips_forwarded_message() -> None:
+    pipeline = MagicMock()
+    pipeline.submit = AsyncMock(return_value=None)
+
+    dp = Dispatcher()
+    dp.include_router(build_router(frozenset({_CHAT_ID})))
+    dp["pipeline"] = pipeline
+
+    now = datetime.now(UTC)
+    msg = Message(
+        message_id=1,
+        date=now,
+        chat=Chat(id=_CHAT_ID, type="private"),
+        text="https://instagram.com/p/x",
+        forward_date=now,
+        forward_origin=MessageOriginUser(
+            type="user",
+            date=now,
+            sender_user=User(id=42, is_bot=False, first_name="A"),
+        ),
+    )
+    await _propagate(dp, _make_update(msg))
+    pipeline.submit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_router_skips_message_from_bot_sender() -> None:
+    pipeline = MagicMock()
+    pipeline.submit = AsyncMock(return_value=None)
+
+    dp = Dispatcher()
+    dp.include_router(build_router(frozenset({_CHAT_ID})))
+    dp["pipeline"] = pipeline
+
+    msg = Message(
+        message_id=1,
+        date=datetime.now(UTC),
+        chat=Chat(id=_CHAT_ID, type="private"),
+        text="https://instagram.com/p/x",
+        from_user=User(id=99, is_bot=True, first_name="saveasbot"),
+    )
+    await _propagate(dp, _make_update(msg))
+    pipeline.submit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_router_skips_message_with_video() -> None:
+    pipeline = MagicMock()
+    pipeline.submit = AsyncMock(return_value=None)
+
+    dp = Dispatcher()
+    dp.include_router(build_router(frozenset({_CHAT_ID})))
+    dp["pipeline"] = pipeline
+
+    msg = Message(
+        message_id=1,
+        date=datetime.now(UTC),
+        chat=Chat(id=_CHAT_ID, type="private"),
+        caption="https://instagram.com/p/x",
+        video=Video(
+            file_id="v1",
+            file_unique_id="vu1",
+            width=10,
+            height=10,
+            duration=1,
+        ),
+    )
+    await _propagate(dp, _make_update(msg))
+    pipeline.submit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_router_skips_message_with_photo() -> None:
+    pipeline = MagicMock()
+    pipeline.submit = AsyncMock(return_value=None)
+
+    dp = Dispatcher()
+    dp.include_router(build_router(frozenset({_CHAT_ID})))
+    dp["pipeline"] = pipeline
+
+    msg = Message(
+        message_id=1,
+        date=datetime.now(UTC),
+        chat=Chat(id=_CHAT_ID, type="private"),
+        caption="https://instagram.com/p/x",
+        photo=[PhotoSize(file_id="p1", file_unique_id="pu1", width=10, height=10)],
+    )
+    await _propagate(dp, _make_update(msg))
     pipeline.submit.assert_not_awaited()
 
 

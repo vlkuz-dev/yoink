@@ -19,6 +19,24 @@ def build_router(chat_allowlist: frozenset[int] = frozenset()) -> Router:
 
     @router.message(F.text | F.caption)
     async def handle_media_message(message: Message, pipeline: Pipeline) -> None:
+        if message.forward_origin is not None or message.forward_date is not None:
+            log.info("skip_forward", chat_id=message.chat.id)
+            return
+        if message.from_user is not None and message.from_user.is_bot:
+            log.info("skip_bot_sender", chat_id=message.chat.id)
+            return
+        if (
+            message.video is not None
+            or message.photo
+            or message.animation is not None
+            or message.document is not None
+            or message.audio is not None
+            or message.voice is not None
+            or message.video_note is not None
+            or message.sticker is not None
+        ):
+            log.info("skip_media_message", chat_id=message.chat.id)
+            return
         try:
             await pipeline.submit(message)
         except Exception:
