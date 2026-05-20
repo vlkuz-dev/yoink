@@ -41,6 +41,10 @@ async def _run() -> int:
     )
     registry = ProviderRegistry.autodiscover()
     rate_limiter = TokenBucketLimiter(rate_per_min=settings.rate_per_chat_per_min)
+    user_rate_limiter = TokenBucketLimiter(
+        rate_per_hour=settings.rate_per_user_per_hour,
+        idle_gc_seconds=2 * 3600.0,
+    )
     bot, dp = build_bot(settings)
     uploader = TelegramUploader(bot)
     notifier = AdminNotifier(
@@ -60,6 +64,7 @@ async def _run() -> int:
         allowlist=allowlist,
         notifier=notifier,
         cookie_health=cookie_health,
+        user_rate_limiter=user_rate_limiter,
     )
 
     dp["pipeline"] = pipeline

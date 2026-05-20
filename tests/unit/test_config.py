@@ -21,6 +21,7 @@ def test_defaults_applied(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.download_timeout_s == 90
     assert s.max_file_mb == 50
     assert s.rate_per_chat_per_min == 10
+    assert s.rate_per_user_per_hour == 5
     assert s.allowlist_mode is True
     assert s.admin_ids == frozenset()
     assert s.chat_allowlist == frozenset()
@@ -120,6 +121,23 @@ def test_log_format_invalid_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_workers_bounds(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("YOINK_BOT_TOKEN", "t")
     monkeypatch.setenv("YOINK_WORKERS", "0")
+
+    with pytest.raises(ValidationError):
+        Settings()  # type: ignore[call-arg]
+
+
+def test_rate_per_user_per_hour_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("YOINK_BOT_TOKEN", "t")
+    monkeypatch.setenv("YOINK_RATE_PER_USER_PER_HOUR", "3")
+
+    s = Settings()  # type: ignore[call-arg]
+
+    assert s.rate_per_user_per_hour == 3
+
+
+def test_rate_per_user_per_hour_rejects_zero(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("YOINK_BOT_TOKEN", "t")
+    monkeypatch.setenv("YOINK_RATE_PER_USER_PER_HOUR", "0")
 
     with pytest.raises(ValidationError):
         Settings()  # type: ignore[call-arg]

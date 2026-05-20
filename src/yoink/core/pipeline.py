@@ -38,6 +38,12 @@ if TYPE_CHECKING:
     SleepFn = Callable[[float], Awaitable[None]]
 
 
+GO_TOUCH_GRASS_TEXT = (
+    "Кажется, ты уже посмотрел свою порцию мемов на этот час. "
+    "Самое время выйти на улицу, потрогать траву и послушать пение птиц."
+)
+
+
 _STALE_FILE_ID_PHRASES: tuple[str, ...] = (
     "wrong file identifier",
     "wrong file_id",
@@ -128,12 +134,14 @@ class Pipeline:
         heartbeat_interval_s: float = 10.0,
         notifier: AdminNotifier | None = None,
         cookie_health: CookieHealth | None = None,
+        user_rate_limiter: TokenBucketLimiter | None = None,
     ) -> None:
         if workers < 1:
             raise ValueError("workers must be >= 1")
         self._registry = registry
         self._cache = cache
         self._rate_limiter = rate_limiter
+        self._user_rate_limiter = user_rate_limiter
         self._uploader = uploader
         self._workdir_root = workdir_root
         self._workers = workers
@@ -170,6 +178,7 @@ class Pipeline:
         if not urls:
             _log.info("no_urls_extracted", chat_id=chat_id)
             return
+        humor_sent = False
         for url in urls:
             try:
                 validate_url(url, allowlist=self._allowlist, resolve_dns=False)
@@ -188,6 +197,24 @@ class Pipeline:
                     url=redact_url(url),
                     chat_id=chat_id,
                 )
+                continue
+            if self._user_rate_limiter is not None and not self._user_rate_limiter.try_acquire(user_id):
+                _log.info(
+                    "user_rate_limited",
+                    user_id=user_id,
+                    chat_id=chat_id,
+                    url=redact_url(url),
+                )
+                if not humor_sent:
+                    humor_sent = True
+                    try:
+                        await message.reply(GO_TOUCH_GRASS_TEXT)
+                    except TelegramAPIError:
+                        _log.exception(
+                            "user_rate_limit_reply_failed",
+                            chat_id=chat_id,
+                            user_id=user_id,
+                        )
                 continue
             url_hash = hash_url(url)
             cached = await self._cache.get(url_hash)

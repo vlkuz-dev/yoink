@@ -22,19 +22,31 @@ class TokenBucketLimiter:
 
     def __init__(
         self,
-        rate_per_min: int,
+        rate_per_min: int | None = None,
         burst: int | None = None,
         *,
+        rate_per_hour: int | None = None,
         clock: Callable[[], float] = time.monotonic,
         idle_gc_seconds: float = IDLE_GC_SECONDS,
     ) -> None:
-        if rate_per_min <= 0:
-            raise ValueError("rate_per_min must be positive")
+        if (rate_per_min is None) == (rate_per_hour is None):
+            raise ValueError("specify exactly one of rate_per_min or rate_per_hour")
+        if rate_per_min is not None:
+            if rate_per_min <= 0:
+                raise ValueError("rate_per_min must be positive")
+            rate_per_sec = rate_per_min / 60.0
+            default_burst = rate_per_min
+        else:
+            assert rate_per_hour is not None
+            if rate_per_hour <= 0:
+                raise ValueError("rate_per_hour must be positive")
+            rate_per_sec = rate_per_hour / 3600.0
+            default_burst = rate_per_hour
         if burst is None:
-            burst = rate_per_min
+            burst = default_burst
         if burst <= 0:
             raise ValueError("burst must be positive")
-        self._rate_per_sec: float = rate_per_min / 60.0
+        self._rate_per_sec: float = rate_per_sec
         self._burst: float = float(burst)
         self._clock = clock
         self._idle_gc_seconds = idle_gc_seconds

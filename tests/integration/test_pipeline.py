@@ -92,7 +92,12 @@ class FakeUploader:
 
 
 def _make_message(url: str, *, chat_id: int = 1001, user_id: int = 7) -> SimpleNamespace:
-    return SimpleNamespace(
+    replies: list[str] = []
+
+    async def reply(text: str) -> None:
+        replies.append(text)
+
+    msg = SimpleNamespace(
         text=url,
         caption=None,
         entities=None,
@@ -100,7 +105,10 @@ def _make_message(url: str, *, chat_id: int = 1001, user_id: int = 7) -> SimpleN
         chat=SimpleNamespace(id=chat_id),
         from_user=SimpleNamespace(id=user_id),
         message_id=42,
+        reply=reply,
+        replies=replies,
     )
+    return msg
 
 
 async def _wait_for(predicate, *, timeout: float = 2.0) -> None:
@@ -121,12 +129,21 @@ async def _build_pipeline(
     burst: int = 600,
     workers: int = 2,
     retry_attempts: int = 3,
+    user_rate_per_hour: int | None = None,
+    user_burst: int | None = None,
 ) -> tuple[Pipeline, FileIdCache, ProviderRegistry]:
     cache = FileIdCache(tmp_path / "cache.sqlite")
     await cache.init()
     registry = ProviderRegistry()
     registry.register(provider)
     limiter = TokenBucketLimiter(rate_per_min, burst=burst)
+    user_limiter: TokenBucketLimiter | None = None
+    if user_rate_per_hour is not None:
+        user_limiter = TokenBucketLimiter(
+            rate_per_hour=user_rate_per_hour,
+            burst=user_burst,
+            idle_gc_seconds=2 * 3600.0,
+        )
 
     async def fast_sleep(_s: float) -> None:
         return None
@@ -140,6 +157,7 @@ async def _build_pipeline(
         workers=workers,
         retry_attempts=retry_attempts,
         retry_sleep=fast_sleep,
+        user_rate_limiter=user_limiter,
     )
     await pipeline.start()
     return pipeline, cache, registry
@@ -709,6 +727,102 @@ async def test_pipeline_rate_limit_drops_url(tmp_path: Path) -> None:
         await pipeline.submit(_make_message(u2))  # dropped: bucket empty
         await pipeline.join()
         assert provider.fetch_calls == [u1]
+    finally:
+        await pipeline.stop()
+        await cache.close()
+
+
+@pytest.mark.asyncio
+async def test_user_rate_limit_replies_with_humor_once(tmp_path: Path) -> None:
+    from yoink.core.pipeline import GO_TOUCH_GRASS_TEXT
+
+    provider = FakeProvider(media_root=tmp_path)
+    uploader = FakeUploader()
+    pipeline, cache, _ = await _build_pipeline(
+        tmp_path,
+        provider=provider,
+        uploader=uploader,
+        workers=1,
+        user_rate_per_hour=5,
+        user_burst=1,
+    )
+    try:
+        urls = [f"https://www.instagram.com/p/u{i}/" for i in range(6)]
+        msg = _make_message(" ".join(urls))
+        await pipeline.submit(msg)
+        await pipeline.join()
+        assert provider.fetch_calls == [urls[0]]
+        assert msg.replies == [GO_TOUCH_GRASS_TEXT]
+    finally:
+        await pipeline.stop()
+        await cache.close()
+
+
+@pytest.mark.asyncio
+async def test_user_rate_limit_charges_cache_hits(tmp_path: Path) -> None:
+    from yoink.core.pipeline import GO_TOUCH_GRASS_TEXT
+
+    provider = FakeProvider(media_root=tmp_path)
+    uploader = FakeUploader()
+    pipeline, cache, _ = await _build_pipeline(
+        tmp_path,
+        provider=provider,
+        uploader=uploader,
+        workers=1,
+        user_rate_per_hour=5,
+        user_burst=1,
+    )
+    try:
+        u_cached_a = "https://www.instagram.com/p/cachedA/"
+        u_cached_b = "https://www.instagram.com/p/cachedB/"
+        for url in (u_cached_a, u_cached_b):
+            await cache.put(
+                hash_url(url),
+                url,
+                "instagram",
+                [CachedFile(file_id=f"HIT-{url[-3]}", kind="photo", mime="image/jpeg")],
+            )
+
+        msg1 = _make_message(u_cached_a)
+        await pipeline.submit(msg1)
+        await pipeline.join()
+        assert len(uploader.cached_sends) == 1
+        assert msg1.replies == []
+
+        msg2 = _make_message(u_cached_b)
+        await pipeline.submit(msg2)
+        await pipeline.join()
+        assert len(uploader.cached_sends) == 1  # second cache hit blocked
+        assert msg2.replies == [GO_TOUCH_GRASS_TEXT]
+        assert provider.fetch_calls == []
+    finally:
+        await pipeline.stop()
+        await cache.close()
+
+
+@pytest.mark.asyncio
+async def test_user_rate_limit_independent_per_user(tmp_path: Path) -> None:
+    provider = FakeProvider(media_root=tmp_path)
+    uploader = FakeUploader()
+    pipeline, cache, _ = await _build_pipeline(
+        tmp_path,
+        provider=provider,
+        uploader=uploader,
+        workers=1,
+        user_rate_per_hour=5,
+        user_burst=1,
+    )
+    try:
+        u1 = "https://www.instagram.com/p/alpha/"
+        u2 = "https://www.instagram.com/p/beta/"
+        msg_a = _make_message(u1, user_id=111)
+        msg_b = _make_message(u2, user_id=222)
+        await pipeline.submit(msg_a)
+        await pipeline.submit(msg_b)
+        await pipeline.join()
+        assert provider.fetch_calls == [u1, u2]
+        assert msg_a.replies == []
+        assert msg_b.replies == []
     finally:
         await pipeline.stop()
         await cache.close()

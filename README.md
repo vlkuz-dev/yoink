@@ -64,7 +64,8 @@ complete list.
 | `YOINK_QUEUE_MAXSIZE` | `64` | In-process job queue cap |
 | `YOINK_DOWNLOAD_TIMEOUT_S` | `90` | Per-fetch subprocess timeout |
 | `YOINK_MAX_FILE_MB` | `50` | Telegram bot API upload cap |
-| `YOINK_RATE_PER_CHAT_PER_MIN` | `10` | Token-bucket refill per chat |
+| `YOINK_RATE_PER_CHAT_PER_MIN` | `10` | Token-bucket refill per chat (anti-flood; cache hits free) |
+| `YOINK_RATE_PER_USER_PER_HOUR` | `5` | Per-user hourly link budget. Exceeding it triggers a single «go touch grass» reply per message and silently drops the rest. Cache hits also consume the budget. |
 | `YOINK_ALLOWLIST_MODE` | `false` | If `true`, drop URLs whose host is not in the registered provider domain set |
 | `YOINK_ADMIN_IDS` | _(empty)_ | Comma-separated user IDs for `/ping`, `/stats`, `/flush_cache` |
 | `YOINK_CHAT_ALLOWLIST` | _(empty)_ | Comma-separated chat IDs (signed; groups negative) the URL pipeline answers in. Empty = deny all. Independent of `YOINK_ADMIN_IDS` — admin commands still work in DMs. To let an admin process URLs in DM, add their user ID (== private chat id) here too. |

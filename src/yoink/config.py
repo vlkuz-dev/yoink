@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     download_timeout_s: int = Field(default=90, ge=1)
     max_file_mb: int = Field(default=50, ge=1, le=2048)
     rate_per_chat_per_min: int = Field(default=10, ge=1)
+    rate_per_user_per_hour: int = Field(default=5, ge=1)
 
     allowlist_mode: bool = True
     admin_ids: Annotated[frozenset[int], NoDecode] = frozenset()

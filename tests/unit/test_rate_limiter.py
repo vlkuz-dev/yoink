@@ -96,3 +96,42 @@ def test_burst_defaults_to_rate_per_min() -> None:
     for _ in range(3):
         assert limiter.try_acquire(99) is True
     assert limiter.try_acquire(99) is False
+
+
+def test_rate_per_hour_basic() -> None:
+    clock = FakeClock()
+    limiter = TokenBucketLimiter(rate_per_hour=5, clock=clock)
+    for _ in range(5):
+        assert limiter.try_acquire(1) is True
+    assert limiter.try_acquire(1) is False
+
+
+def test_rate_per_hour_refills_over_time() -> None:
+    clock = FakeClock()
+    # idle_gc bumped above the refill window so bucket survives long enough
+    # to observe the refill instead of being evicted as idle.
+    limiter = TokenBucketLimiter(rate_per_hour=5, clock=clock, idle_gc_seconds=3600.0)
+    for _ in range(5):
+        assert limiter.try_acquire(1) is True
+    assert limiter.try_acquire(1) is False
+    clock.advance(720.0)  # 5/hour -> one token per 720s
+    assert limiter.try_acquire(1) is True
+    assert limiter.try_acquire(1) is False
+
+
+def test_rate_per_hour_burst_defaults_to_rate() -> None:
+    clock = FakeClock()
+    limiter = TokenBucketLimiter(rate_per_hour=5, clock=clock)
+    clock.advance(3600.0 * 10)
+    for _ in range(5):
+        assert limiter.try_acquire(1) is True
+    assert limiter.try_acquire(1) is False
+
+
+def test_requires_exactly_one_rate_kind() -> None:
+    with pytest.raises(ValueError):
+        TokenBucketLimiter()
+    with pytest.raises(ValueError):
+        TokenBucketLimiter(rate_per_min=10, rate_per_hour=5)
+    with pytest.raises(ValueError):
+        TokenBucketLimiter(rate_per_hour=0)
