@@ -175,15 +175,15 @@
 - [x] run `pytest -q tests/unit/test_tiktok_provider.py` — must pass before Task 2
 
 ### Task 2: yt-dlp command builder (primary tool) + security flags
-- [ ] implement `_run_yt_dlp(url, workdir)`: build argv `["yt-dlp",
+- [x] implement `_run_yt_dlp(url, workdir)`: build argv `["yt-dlp",
       "--ignore-config", "-o", f"{workdir}/%(id)s.%(ext)s", "--no-progress",
       "--no-warnings", "--write-info-json", "--", url]`; invoke via
       `run_subprocess(cmd, cwd=workdir, timeout_s=self._effective_timeout())`
-- [ ] write tests: assert the emitted argv contains the security flags
+- [x] write tests: assert the emitted argv contains the security flags
       (`--ignore-config`, `--` arg-injection guard) and the URL is the last arg
-- [ ] write tests: `SubprocessTimeoutError` from the runner is caught and
+- [x] write tests: `SubprocessTimeoutError` from the runner is caught and
       surfaced as a transient failure (no crash)
-- [ ] run tests — must pass before Task 3
+- [x] run tests — must pass before Task 3
 
 ### Task 3: Artifact collection, ordering, sidecars, size cap
 - [ ] implement `_collect_items(workdir)`: glob `workdir/**/*` for media
