@@ -186,22 +186,22 @@
 - [x] run tests — must pass before Task 3
 
 ### Task 3: Artifact collection, ordering, sidecars, size cap
-- [ ] implement `_collect_items(workdir)`: glob `workdir/**/*` for media
+- [x] implement `_collect_items(workdir)`: glob `workdir/**/*` for media
       extensions (images → `kind="photo"`, video → `kind="video"`), skip
       `.json`/`.info.json` sidecars and dotfiles, sort by
       `(depth, trailing-numeric-suffix, lexicographic)`; read sidecar metadata;
       `ffprobe` video dimensions/duration when absent (reuse the Instagram
       probe helper or a shared util)
-- [ ] implement `_enforce_size(items)`: raise `MediaTooLarge.from_size(...)`
+- [x] implement `_enforce_size(items)`: raise `MediaTooLarge.from_size(...)`
       when a file exceeds `self._effective_max_bytes()`
-- [ ] implement `_purge_workdir(workdir)`: remove stale artifacts (preserve
+- [x] implement `_purge_workdir(workdir)`: remove stale artifacts (preserve
       `.heartbeat` if the workdir ever coincides — per-job dirs won't, but keep
       the guard for safety)
-- [ ] write tests: single video → one `video` item with probed dims;
+- [x] write tests: single video → one `video` item with probed dims;
       single photo-post image → one `photo` item
-- [ ] write tests: skips `.info.json` sidecars and dotfiles; `MediaTooLarge`
+- [x] write tests: skips `.info.json` sidecars and dotfiles; `MediaTooLarge`
       raised when a synthesised file exceeds `YOINK_MAX_FILE_MB`
-- [ ] run tests — must pass before Task 4
+- [x] run tests — must pass before Task 4
 
 ### Task 4: `fetch()` orchestration (yt-dlp primary, happy path)
 - [ ] implement `async fetch(url, workdir)`: `mkdir` → `_purge_workdir` →

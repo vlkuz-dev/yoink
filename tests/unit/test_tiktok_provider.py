@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 
@@ -7,7 +8,7 @@ import pytest
 
 from yoink.downloader.runner import SubprocessResult, SubprocessTimeoutError
 from yoink.providers.base import Provider
-from yoink.providers.tiktok import TikTokProvider, _ToolFailed
+from yoink.providers.tiktok import MediaTooLarge, TikTokProvider, _ToolFailed
 from yoink.providers.tiktok import provider as module_provider
 
 SideEffect = Callable[[list[str], Path], None]
@@ -56,6 +57,16 @@ def _result(
         stderr=stderr,
         duration_s=0.001,
     )
+
+
+def _make_file(path: Path, *, size: int = 8) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"x" * size)
+
+
+def _write_sidecar(media_path: Path, meta: dict[str, object]) -> None:
+    sidecar = media_path.parent / (media_path.name + ".json")
+    sidecar.write_text(json.dumps(meta), encoding="utf-8")
 
 
 def test_module_provider_satisfies_protocol() -> None:
@@ -194,3 +205,148 @@ async def test_yt_dlp_rc_nonzero_generic_is_permanent(tmp_path: Path) -> None:
         await p._run_yt_dlp(url, tmp_path)
 
     assert ei.value.transient is False
+
+
+# --- Task 3: artifact collection, ordering, sidecars, size cap ---
+
+
+async def test_collect_single_video_probed_dims(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A lone .mp4 → one `video` item; missing dims are filled in by ffprobe."""
+    monkeypatch.setattr(
+        "yoink.providers.tiktok.shutil.which",
+        lambda _name: "/usr/bin/ffprobe",
+    )
+    vid = tmp_path / "7123456789.mp4"
+    _make_file(vid)
+    # No sidecar → collector falls back to ffprobe for width/height/duration.
+    ffprobe_json = json.dumps(
+        {"streams": [{"width": 1080, "height": 1920, "duration": "12.5"}]},
+    ).encode()
+    rec = _Recorder([_result(stdout=ffprobe_json)])
+    p = TikTokProvider(runner=rec)  # probe_video_dims defaults True
+
+    items = await p._collect_items(tmp_path)
+
+    assert len(items) == 1
+    it = items[0]
+    assert it.kind == "video"
+    assert it.mime == "video/mp4"
+    assert it.width == 1080
+    assert it.height == 1920
+    assert it.duration_s == 12  # int(float("12.5"))
+    # ffprobe was actually invoked.
+    assert rec.calls[0][0] == "ffprobe"
+
+
+async def test_collect_single_photo(tmp_path: Path) -> None:
+    """A single slideshow image → one `photo` item with sidecar dims."""
+    img = tmp_path / "7123456789_1.jpg"
+    _make_file(img)
+    _write_sidecar(img, {"width": 1080, "height": 1080})
+    p = TikTokProvider(probe_video_dims=False)
+
+    items = await p._collect_items(tmp_path)
+
+    assert len(items) == 1
+    it = items[0]
+    assert it.kind == "photo"
+    assert it.mime == "image/jpeg"
+    assert it.width == 1080
+    assert it.height == 1080
+    assert it.path.name == "7123456789_1.jpg"
+
+
+async def test_collect_slideshow_numeric_order(tmp_path: Path) -> None:
+    """10 slide images must keep numeric order (`_2` before `_10`)."""
+    for i in range(1, 11):
+        img = tmp_path / f"slides_{i}.jpg"
+        _make_file(img)
+        _write_sidecar(img, {"width": 1080, "height": 1350})
+    p = TikTokProvider(probe_video_dims=False)
+
+    items = await p._collect_items(tmp_path)
+
+    names = [it.path.name for it in items]
+    assert names == [f"slides_{i}.jpg" for i in range(1, 11)]
+    assert all(it.kind == "photo" for it in items)
+
+
+async def test_collect_skips_sidecars_and_dotfiles(tmp_path: Path) -> None:
+    """`.json` / `.info.json` sidecars, dotfiles and non-media are ignored."""
+    img = tmp_path / "p1.jpg"
+    _make_file(img)
+    _write_sidecar(img, {"width": 800, "height": 600})
+    # yt-dlp-style info.json sidecar, a stray dotfile, and a non-media file.
+    (tmp_path / "p1.info.json").write_text(
+        json.dumps({"width": 800, "height": 600}),
+        encoding="utf-8",
+    )
+    (tmp_path / ".cache").write_bytes(b"meta")
+    (tmp_path / "notes.txt").write_bytes(b"hi")
+    p = TikTokProvider(probe_video_dims=False)
+
+    items = await p._collect_items(tmp_path)
+
+    assert len(items) == 1
+    assert items[0].path.name == "p1.jpg"
+
+
+def test_enforce_size_raises_media_too_large(tmp_path: Path) -> None:
+    big = tmp_path / "big.mp4"
+    _make_file(big, size=4096)
+    p = TikTokProvider(probe_video_dims=False, max_file_bytes=128)
+
+    with pytest.raises(MediaTooLarge) as ei:
+        p._enforce_size(big)
+    assert ei.value.size_bytes == 4096
+    assert ei.value.limit_bytes == 128
+
+
+def test_enforce_size_noop_when_no_limit(tmp_path: Path) -> None:
+    big = tmp_path / "ok.mp4"
+    _make_file(big, size=4096)
+    p = TikTokProvider(probe_video_dims=False)  # no max_file_bytes, no env
+
+    # No limit configured → never raises.
+    p._enforce_size(big)
+
+
+def test_enforce_size_uses_env_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("YOINK_MAX_FILE_MB", "1")
+    small = tmp_path / "s.mp4"
+    _make_file(small, size=8)
+    big = tmp_path / "b.mp4"
+    _make_file(big, size=2 * 1024 * 1024)
+    p = TikTokProvider(probe_video_dims=False)  # falls back to env
+
+    p._enforce_size(small)  # 8 bytes < 1 MiB → ok
+    with pytest.raises(MediaTooLarge):
+        p._enforce_size(big)  # 2 MiB > 1 MiB
+
+
+def test_purge_workdir_removes_stale_preserves_heartbeat(tmp_path: Path) -> None:
+    stale_file = tmp_path / "stale.mp4"
+    _make_file(stale_file, size=4)
+    stale_dir = tmp_path / "subdir"
+    _make_file(stale_dir / "nested.jpg", size=4)
+    heartbeat = tmp_path / ".heartbeat"
+    _make_file(heartbeat, size=1)
+
+    TikTokProvider._purge_workdir(tmp_path)
+
+    assert not stale_file.exists()
+    assert not stale_dir.exists()
+    # The pipeline heartbeat sentinel must survive a purge.
+    assert heartbeat.exists()
+
+
+def test_purge_workdir_missing_dir_is_noop(tmp_path: Path) -> None:
+    missing = tmp_path / "does-not-exist"
+    # Must not raise when the workdir was never created.
+    TikTokProvider._purge_workdir(missing)
