@@ -359,6 +359,18 @@ class TikTokProvider:
         cmd: list[str] = [
             "yt-dlp",
             "--ignore-config",
+            # TikTok's highest-bitrate variants are H.265/HEVC, which Telegram
+            # cannot inline-preview (the video renders as a blank/white frame).
+            # Prefer the progressive `download` (H.264) format — a single,
+            # reliable URL — then any H.264 stream, before falling back to best.
+            # `download` also dodges the per-format CDN mirror suffixes
+            # (`..._540p_237379-2`) whose last mirror has been observed to serve
+            # a truncated, moov-less stub. Remux into mp4 so the container is
+            # always Telegram-friendly.
+            "-f",
+            "download/best[vcodec^=h264]/best",
+            "--remux-video",
+            "mp4",
             "-o",
             f"{workdir}/%(id)s.%(ext)s",
             "--no-progress",
