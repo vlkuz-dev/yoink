@@ -350,3 +350,160 @@ def test_purge_workdir_missing_dir_is_noop(tmp_path: Path) -> None:
     missing = tmp_path / "does-not-exist"
     # Must not raise when the workdir was never created.
     TikTokProvider._purge_workdir(missing)
+
+
+# --- Task 4: fetch() orchestration (yt-dlp primary, happy path) ---
+
+
+def _yt_dlp_writes(files: list[tuple[str, dict[str, object] | None]]) -> SideEffect:
+    """Build a side_effect that synthesises yt-dlp output into the workdir.
+
+    Each entry is `(relative_name, sidecar_meta_or_None)`. ffprobe calls
+    (cmd[0] == "ffprobe") are ignored so video probing still works.
+    """
+
+    def _effect(cmd: list[str], cwd: Path) -> None:
+        if cmd and cmd[0] == "ffprobe":
+            return
+        for name, meta in files:
+            target = cwd / name
+            _make_file(target)
+            if meta is not None:
+                _write_sidecar(target, meta)
+
+    return _effect
+
+
+@pytest.mark.asyncio
+async def test_fetch_single_video_happy_path(tmp_path: Path) -> None:
+    url = "https://www.tiktok.com/@user/video/7123456789"
+    rec = _Recorder(
+        [_result()],
+        side_effect=_yt_dlp_writes(
+            [("7123456789.mp4", {"width": 1080, "height": 1920, "duration": 12})],
+        ),
+    )
+    p = TikTokProvider(runner=rec, probe_video_dims=False)
+
+    pkg = await p.fetch(url, tmp_path)
+
+    assert pkg.source_url == url
+    assert pkg.provider == "tiktok"
+    assert pkg.caption is None
+    assert len(pkg.items) == 1
+    it = pkg.items[0]
+    assert it.kind == "video"
+    assert it.path.name == "7123456789.mp4"
+    assert it.width == 1080
+    assert it.height == 1920
+    # Only the yt-dlp invocation ran (no fallback on the happy path).
+    assert rec.calls[0][0] == "yt-dlp"
+    assert len(rec.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_fetch_slideshow_three_photos_stable_order(tmp_path: Path) -> None:
+    url = "https://www.tiktok.com/@user/photo/7123456789"
+    rec = _Recorder(
+        [_result()],
+        side_effect=_yt_dlp_writes(
+            [
+                (f"7123456789_{i}.jpg", {"width": 1080, "height": 1350})
+                for i in range(1, 4)
+            ],
+        ),
+    )
+    p = TikTokProvider(runner=rec, probe_video_dims=False)
+
+    pkg = await p.fetch(url, tmp_path)
+
+    names = [it.path.name for it in pkg.items]
+    assert names == [f"7123456789_{i}.jpg" for i in range(1, 4)]
+    assert all(it.kind == "photo" for it in pkg.items)
+
+
+@pytest.mark.asyncio
+async def test_fetch_slideshow_ten_photos_numeric_order(tmp_path: Path) -> None:
+    url = "https://www.tiktok.com/@user/photo/7123456789"
+    rec = _Recorder(
+        [_result()],
+        side_effect=_yt_dlp_writes(
+            [
+                (f"slide_{i}.jpg", {"width": 1080, "height": 1350})
+                for i in range(1, 11)
+            ],
+        ),
+    )
+    p = TikTokProvider(runner=rec, probe_video_dims=False)
+
+    pkg = await p.fetch(url, tmp_path)
+
+    names = [it.path.name for it in pkg.items]
+    # `_2` must precede `_10` (numeric, not lexicographic, ordering).
+    assert names == [f"slide_{i}.jpg" for i in range(1, 11)]
+
+
+@pytest.mark.asyncio
+async def test_fetch_purges_stale_before_tool(tmp_path: Path) -> None:
+    url = "https://www.tiktok.com/@user/video/7123456789"
+    # A leftover file from a prior failed attempt must be purged so it is
+    # not returned as a successful artifact.
+    stale = tmp_path / "stale_old.mp4"
+    _make_file(stale, size=4)
+    rec = _Recorder(
+        [_result()],
+        side_effect=_yt_dlp_writes(
+            [("7123456789.mp4", {"width": 720, "height": 1280, "duration": 5})],
+        ),
+    )
+    p = TikTokProvider(runner=rec, probe_video_dims=False)
+
+    pkg = await p.fetch(url, tmp_path)
+
+    names = [it.path.name for it in pkg.items]
+    assert "stale_old.mp4" not in names
+    assert names == ["7123456789.mp4"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_too_large_raises(tmp_path: Path) -> None:
+    url = "https://www.tiktok.com/@user/video/7123456789"
+    rec = _Recorder(
+        [_result()],
+        side_effect=_yt_dlp_writes(
+            [("7123456789.mp4", {"width": 720, "height": 1280, "duration": 5})],
+        ),
+    )
+    p = TikTokProvider(runner=rec, probe_video_dims=False, max_file_bytes=4)
+
+    with pytest.raises(MediaTooLarge):
+        await p.fetch(url, tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_fetch_yt_dlp_permanent_failure_raises_provider_error(
+    tmp_path: Path,
+) -> None:
+    from yoink.providers.tiktok import ProviderError
+
+    url = "https://www.tiktok.com/@user/video/7123456789"
+    rec = _Recorder([_result(returncode=1, stderr="some unrecognized error")])
+    p = TikTokProvider(runner=rec, probe_video_dims=False)
+
+    with pytest.raises(ProviderError) as ei:
+        await p.fetch(url, tmp_path)
+    assert ei.value.url == url
+
+
+@pytest.mark.asyncio
+async def test_fetch_yt_dlp_transient_failure_raises_transient(tmp_path: Path) -> None:
+    from yoink.providers.tiktok import ProviderTransientError
+
+    url = "https://www.tiktok.com/@user/video/7123456789"
+    rec = _Recorder(
+        [_result(returncode=1, stderr="HTTP Error 429: Too Many Requests")],
+    )
+    p = TikTokProvider(runner=rec, probe_video_dims=False)
+
+    with pytest.raises(ProviderTransientError):
+        await p.fetch(url, tmp_path)

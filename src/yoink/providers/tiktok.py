@@ -20,7 +20,7 @@ from yoink.downloader.runner import (
     SubprocessTimeoutError,
     run_subprocess,
 )
-from yoink.downloader.safety import redact_text
+from yoink.downloader.safety import redact_text, redact_url
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
@@ -298,7 +298,41 @@ class TikTokProvider:
         return False
 
     async def fetch(self, url: str, workdir: Path) -> MediaPackage:
-        raise NotImplementedError  # implemented in a later task
+        workdir.mkdir(parents=True, exist_ok=True)
+        # Purge any leftover artifacts from a prior failed attempt so the
+        # retry doesn't pick up truncated/half-written files as success.
+        self._purge_workdir(workdir)
+
+        # yt-dlp is the primary TikTok extractor (gallery-dl fallback wired
+        # in a later task). `_run_yt_dlp` runs the tool and collects items.
+        try:
+            items = await self._run_yt_dlp(url, workdir)
+        except _ToolFailed as exc:
+            redacted = redact_url(url)
+            if exc.transient:
+                raise ProviderTransientError(
+                    f"yt-dlp transient-failed for {redacted}: {exc!s}",
+                    url=url,
+                ) from exc
+            raise ProviderError(
+                f"yt-dlp failed for {redacted}: {exc!s}",
+                url=url,
+            ) from exc
+
+        if not items:
+            raise ProviderError(
+                f"no media items extracted from {redact_url(url)}", url=url
+            )
+
+        for item in items:
+            self._enforce_size(item.path)
+
+        return MediaPackage(
+            source_url=url,
+            provider=self.name,
+            items=items,
+            caption=None,
+        )
 
     async def _run_yt_dlp(self, url: str, workdir: Path) -> list[MediaItem]:
         # yt-dlp is the primary TikTok extractor: it has the stronger

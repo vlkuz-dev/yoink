@@ -204,15 +204,15 @@
 - [x] run tests — must pass before Task 4
 
 ### Task 4: `fetch()` orchestration (yt-dlp primary, happy path)
-- [ ] implement `async fetch(url, workdir)`: `mkdir` → `_purge_workdir` →
+- [x] implement `async fetch(url, workdir)`: `mkdir` → `_purge_workdir` →
       `_run_yt_dlp` → `_collect_items` → `_enforce_size` → return
       `MediaPackage(source_url=url, provider=self.name, items=..., caption=None)`
-- [ ] write tests: single-video happy path returns a 1-item package in order
-- [ ] write tests: photo-slideshow happy path with 3 images → 3 `photo` items
+- [x] write tests: single-video happy path returns a 1-item package in order
+- [x] write tests: photo-slideshow happy path with 3 images → 3 `photo` items
       in stable order; 10 images → numeric order (`_2` before `_10`)
-- [ ] write tests: `_purge_workdir` runs before the tool (stale leftover file
+- [x] write tests: `_purge_workdir` runs before the tool (stale leftover file
       from a prior attempt is NOT included in results)
-- [ ] run tests — must pass before Task 5
+- [x] run tests — must pass before Task 5
 
 ### Task 5: gallery-dl fallback + error classification
 - [ ] implement `_run_gallery_dl(url, workdir)`: argv `["gallery-dl",
