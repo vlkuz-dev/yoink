@@ -270,13 +270,15 @@
       84.08% total, `tiktok.py` 90%
 
 ### Task 9: [Final] Update documentation
-- [ ] update `README.md` — list TikTok alongside Instagram as a supported
-      platform (and note slideshow support, no-cookie/public-only caveat)
-- [ ] update `CLAUDE.md` — change the "(Instagram in MVP)" line to mention
+- [x] update `README.md` — list TikTok alongside Instagram as a supported
+      platform (and note slideshow support, no-cookie/public-only caveat).
+      Added a "Supported platforms" table, TikTok risk notes (extractor drift,
+      region locks), and de-TikTok'd the generic "Adding a new provider" stub.
+- [x] update `CLAUDE.md` — change the "(Instagram in MVP)" line to mention
       TikTok; note the inverted tool order for the TikTok provider in the
       provider section
-- [ ] update `.env.example` if it enumerates supported platforms (no new env
-      vars are introduced)
+- [x] `.env.example` — no change needed; it enumerates env vars only, not
+      supported platforms, and no new env vars are introduced
 
 *Note: ralphex automatically moves completed plans to `docs/plans/completed/`.*
 

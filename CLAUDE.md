@@ -5,9 +5,9 @@ Working notes for AI assistants editing this repository.
 ## What this is
 
 `yoink` is an aiogram-based Telegram bot. Users paste media URLs (Instagram
-in MVP), the bot downloads via `gallery-dl` / `yt-dlp` subprocesses and
-re-uploads the media inline. Single process, stateless apart from a SQLite
-`file_id` cache.
+and TikTok supported), the bot downloads via `gallery-dl` / `yt-dlp`
+subprocesses and re-uploads the media inline. Single process, stateless apart
+from a SQLite `file_id` cache.
 
 ## Codebase conventions
 
@@ -79,6 +79,14 @@ When testing a provider:
   and skip by default.
 
 `tests/unit/test_instagram_provider.py` is the reference pattern.
+
+Tool order is per-provider. Instagram runs `gallery-dl` primary →
+`yt-dlp` fallback; the TikTok provider inverts this (`yt-dlp` primary →
+`gallery-dl` fallback, since yt-dlp has the stronger TikTok extractor and
+resolves `vm.`/`vt.` short links cleanly). TikTok needs no cookies — public
+posts only — and supports both standard videos and photo slideshows
+("photo mode", collected in numeric-suffix order). See
+`tests/unit/test_tiktok_provider.py`.
 
 ## Where things live
 
