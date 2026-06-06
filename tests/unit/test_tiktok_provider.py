@@ -151,6 +151,12 @@ async def test_yt_dlp_builds_secure_argv(tmp_path: Path) -> None:
     assert "--ignore-config" in cmd
     assert "--write-info-json" in cmd
     assert "--no-progress" in cmd
+    # Force an H.264 stream and an mp4 container so Telegram can inline-preview
+    # the result (HEVC / the truncated CDN mirror render as a blank video).
+    f_index = cmd.index("-f")
+    assert cmd[f_index + 1] == "download/best[vcodec^=h264]/best"
+    remux_index = cmd.index("--remux-video")
+    assert cmd[remux_index + 1] == "mp4"
     # `--` argument-injection guard must precede the URL, which is last.
     assert cmd[-2] == "--"
     assert cmd[-1] == url
