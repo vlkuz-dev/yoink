@@ -258,15 +258,16 @@
 - [x] run full unit + integration suite — must pass before Task 8
 
 ### Task 8: Verify acceptance criteria
-- [ ] verify all Overview requirements implemented (video + slideshow, yt-dlp
+- [x] verify all Overview requirements implemented (video + slideshow, yt-dlp
       primary → gallery-dl fallback, no cookies, autodiscovered, no core edits
       beyond `__main__`/docs)
-- [ ] verify edge cases handled (short links, numeric slideshow order,
+- [x] verify edge cases handled (short links, numeric slideshow order,
       MediaTooLarge, transient vs permanent)
-- [ ] run full test suite: `pytest -q`
-- [ ] run `ruff check` — all issues fixed
-- [ ] run `mypy src` — clean under `--strict`
-- [ ] verify coverage gate: `pytest -q --cov=src/yoink --cov-fail-under=80`
+- [x] run full test suite: `pytest -q` — 329 passed
+- [x] run `ruff check` — all checks passed
+- [x] run `mypy src` — clean under `--strict` (no issues, 30 files)
+- [x] verify coverage gate: `pytest -q --cov=src/yoink --cov-fail-under=80` —
+      84.08% total, `tiktok.py` 90%
 
 ### Task 9: [Final] Update documentation
 - [ ] update `README.md` — list TikTok alongside Instagram as a supported
