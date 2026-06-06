@@ -215,23 +215,23 @@
 - [x] run tests — must pass before Task 5
 
 ### Task 5: gallery-dl fallback + error classification
-- [ ] implement `_run_gallery_dl(url, workdir)`: argv `["gallery-dl",
+- [x] implement `_run_gallery_dl(url, workdir)`: argv `["gallery-dl",
       "--config-ignore", "-D", str(workdir), "--no-part", "--no-skip",
       "-o","output.mode=null", "-o","output.shorten=false",
       "--write-metadata", "--", url]`
-- [ ] extend `fetch`: when yt-dlp returns `rc != 0` OR zero items (or times
+- [x] extend `fetch`: when yt-dlp returns `rc != 0` OR zero items (or times
       out), `_purge_workdir` then run gallery-dl + `_collect_items`
-- [ ] implement transient/permanent classification: stderr matching the shared
+- [x] implement transient/permanent classification: stderr matching the shared
       transient markers → `ProviderTransientError`; both tools failing with no
       transient marker → `ProviderError`; if EITHER tool's failure is transient,
       the combined result is transient
-- [ ] write tests: yt-dlp `rc=1` triggers gallery-dl fallback (assert both argv
+- [x] write tests: yt-dlp `rc=1` triggers gallery-dl fallback (assert both argv
       recorded, gallery-dl result returned)
-- [ ] write tests: yt-dlp zero-items triggers gallery-dl fallback
-- [ ] write tests: both fail (non-transient) → `ProviderError`; rate-limit /
+- [x] write tests: yt-dlp zero-items triggers gallery-dl fallback
+- [x] write tests: both fail (non-transient) → `ProviderError`; rate-limit /
       5xx stderr → `ProviderTransientError`; one-transient-one-permanent →
       transient; assert gallery-dl security flags present
-- [ ] run tests — must pass before Task 6
+- [x] run tests — must pass before Task 6
 
 ### Task 6: `configure()` + `__main__` wiring + env-var fallback
 - [ ] add `configure(*, max_file_bytes=None, download_timeout_s=None)` to

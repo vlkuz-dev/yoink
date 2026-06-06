@@ -480,28 +480,175 @@ async def test_fetch_too_large_raises(tmp_path: Path) -> None:
         await p.fetch(url, tmp_path)
 
 
+# --- Task 5: gallery-dl fallback + error classification ---
+
+
+def _tool_writes(
+    by_tool: dict[str, list[tuple[str, dict[str, object] | None]]],
+) -> SideEffect:
+    """Build a side_effect that synthesises output per-tool into the workdir.
+
+    Keyed on `cmd[0]` (e.g. ``"yt-dlp"`` / ``"gallery-dl"``) so a test can
+    make one extractor write files and the other write nothing. ffprobe
+    calls are ignored so video probing still works.
+    """
+
+    def _effect(cmd: list[str], cwd: Path) -> None:
+        if not cmd or cmd[0] == "ffprobe":
+            return
+        for name, meta in by_tool.get(cmd[0], []):
+            target = cwd / name
+            _make_file(target)
+            if meta is not None:
+                _write_sidecar(target, meta)
+
+    return _effect
+
+
 @pytest.mark.asyncio
-async def test_fetch_yt_dlp_permanent_failure_raises_provider_error(
+async def test_gallery_dl_builds_secure_argv(tmp_path: Path) -> None:
+    """gallery-dl argv carries the security flags; URL is the last arg after `--`."""
+    url = "https://www.tiktok.com/@user/video/123"
+    # rc=0 with no files written → collector returns nothing → _ToolFailed.
+    rec = _Recorder([_result()])
+    p = TikTokProvider(runner=rec)
+
+    with pytest.raises(_ToolFailed):
+        await p._run_gallery_dl(url, tmp_path)
+
+    cmd = rec.calls[0]
+    assert cmd[0] == "gallery-dl"
+    assert "--config-ignore" in cmd
+    assert "--write-metadata" in cmd
+    assert "--no-part" in cmd
+    d_index = cmd.index("-D")
+    assert cmd[d_index + 1] == str(tmp_path)
+    # `--` argument-injection guard must precede the URL, which is last.
+    assert cmd[-2] == "--"
+    assert cmd[-1] == url
+
+
+@pytest.mark.asyncio
+async def test_gallery_dl_timeout_surfaced_as_transient(tmp_path: Path) -> None:
+    url = "https://www.tiktok.com/@user/video/123"
+    rec = _Recorder([SubprocessTimeoutError(["gallery-dl"], 30.0)])
+    p = TikTokProvider(runner=rec)
+
+    with pytest.raises(_ToolFailed) as ei:
+        await p._run_gallery_dl(url, tmp_path)
+
+    assert ei.value.transient is True
+    assert not isinstance(ei.value, SubprocessTimeoutError)
+
+
+@pytest.mark.asyncio
+async def test_fetch_yt_dlp_rc_nonzero_falls_back_to_gallery_dl(
+    tmp_path: Path,
+) -> None:
+    """yt-dlp rc!=0 → gallery-dl runs and its result is returned."""
+    url = "https://www.tiktok.com/@user/video/7123456789"
+    rec = _Recorder(
+        [
+            _result(returncode=1, stderr="some unrecognized yt-dlp error"),
+            _result(),  # gallery-dl succeeds
+        ],
+        side_effect=_tool_writes(
+            {"gallery-dl": [("7123456789.jpg", {"width": 1080, "height": 1080})]},
+        ),
+    )
+    p = TikTokProvider(runner=rec, probe_video_dims=False)
+
+    pkg = await p.fetch(url, tmp_path)
+
+    assert len(pkg.items) == 1
+    assert pkg.items[0].path.name == "7123456789.jpg"
+    # Both extractors were invoked, in order.
+    assert [c[0] for c in rec.calls] == ["yt-dlp", "gallery-dl"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_yt_dlp_zero_items_falls_back_to_gallery_dl(
+    tmp_path: Path,
+) -> None:
+    """yt-dlp exits 0 but writes nothing → gallery-dl fallback runs."""
+    url = "https://www.tiktok.com/@user/photo/7123456789"
+    rec = _Recorder(
+        [
+            _result(),  # yt-dlp rc=0 but writes no files
+            _result(),  # gallery-dl succeeds
+        ],
+        side_effect=_tool_writes(
+            {
+                "gallery-dl": [
+                    (f"7123456789_{i}.jpg", {"width": 1080, "height": 1350})
+                    for i in range(1, 4)
+                ],
+            },
+        ),
+    )
+    p = TikTokProvider(runner=rec, probe_video_dims=False)
+
+    pkg = await p.fetch(url, tmp_path)
+
+    names = [it.path.name for it in pkg.items]
+    assert names == [f"7123456789_{i}.jpg" for i in range(1, 4)]
+    assert [c[0] for c in rec.calls] == ["yt-dlp", "gallery-dl"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_both_extractors_permanent_raises_provider_error(
     tmp_path: Path,
 ) -> None:
     from yoink.providers.tiktok import ProviderError
 
     url = "https://www.tiktok.com/@user/video/7123456789"
-    rec = _Recorder([_result(returncode=1, stderr="some unrecognized error")])
+    rec = _Recorder(
+        [
+            _result(returncode=1, stderr="some unrecognized error"),
+            _result(returncode=1, stderr="another unrecognized error"),
+        ],
+    )
     p = TikTokProvider(runner=rec, probe_video_dims=False)
 
     with pytest.raises(ProviderError) as ei:
         await p.fetch(url, tmp_path)
     assert ei.value.url == url
+    assert [c[0] for c in rec.calls] == ["yt-dlp", "gallery-dl"]
 
 
 @pytest.mark.asyncio
-async def test_fetch_yt_dlp_transient_failure_raises_transient(tmp_path: Path) -> None:
+async def test_fetch_primary_transient_then_permanent_is_transient(
+    tmp_path: Path,
+) -> None:
+    """yt-dlp transient + gallery-dl permanent → combined result is transient."""
     from yoink.providers.tiktok import ProviderTransientError
 
     url = "https://www.tiktok.com/@user/video/7123456789"
     rec = _Recorder(
-        [_result(returncode=1, stderr="HTTP Error 429: Too Many Requests")],
+        [
+            _result(returncode=1, stderr="HTTP Error 429: Too Many Requests"),
+            _result(returncode=1, stderr="some unrecognized error"),
+        ],
+    )
+    p = TikTokProvider(runner=rec, probe_video_dims=False)
+
+    with pytest.raises(ProviderTransientError):
+        await p.fetch(url, tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_fetch_primary_permanent_then_transient_is_transient(
+    tmp_path: Path,
+) -> None:
+    """yt-dlp permanent + gallery-dl 5xx → combined result is transient."""
+    from yoink.providers.tiktok import ProviderTransientError
+
+    url = "https://www.tiktok.com/@user/video/7123456789"
+    rec = _Recorder(
+        [
+            _result(returncode=1, stderr="some unrecognized error"),
+            _result(returncode=1, stderr="HTTP Error 503: Service Unavailable"),
+        ],
     )
     p = TikTokProvider(runner=rec, probe_video_dims=False)
 

@@ -303,21 +303,40 @@ class TikTokProvider:
         # retry doesn't pick up truncated/half-written files as success.
         self._purge_workdir(workdir)
 
-        # yt-dlp is the primary TikTok extractor (gallery-dl fallback wired
-        # in a later task). `_run_yt_dlp` runs the tool and collects items.
+        # yt-dlp is the primary TikTok extractor; gallery-dl is the fallback
+        # (inverts the Instagram order — yt-dlp has the stronger TikTok
+        # extractor and resolves short links cleanly).
+        primary_err: str | None = None
+        primary_transient = False
+        items: list[MediaItem] = []
         try:
             items = await self._run_yt_dlp(url, workdir)
         except _ToolFailed as exc:
-            redacted = redact_url(url)
-            if exc.transient:
-                raise ProviderTransientError(
-                    f"yt-dlp transient-failed for {redacted}: {exc!s}",
+            primary_err = str(exc)
+            primary_transient = exc.transient
+
+        if not items:
+            # Purge yt-dlp partials so gallery-dl's _collect_items doesn't
+            # pick up truncated/half-written files as successful artifacts.
+            self._purge_workdir(workdir)
+            try:
+                items = await self._run_gallery_dl(url, workdir)
+            except _ToolFailed as exc:
+                # If either extractor failed transiently, the combined fetch
+                # is retry-eligible: backoff + retry may let the transient
+                # tool succeed.
+                redacted = redact_url(url)
+                if primary_transient or exc.transient:
+                    raise ProviderTransientError(
+                        "extractor transient-failed for "
+                        f"{redacted}: yt-dlp={primary_err!r}, gallery-dl={exc!s}",
+                        url=url,
+                    ) from exc
+                raise ProviderError(
+                    "both extractors failed for "
+                    f"{redacted}: yt-dlp={primary_err!r}, gallery-dl={exc!s}",
                     url=url,
                 ) from exc
-            raise ProviderError(
-                f"yt-dlp failed for {redacted}: {exc!s}",
-                url=url,
-            ) from exc
 
         if not items:
             raise ProviderError(
@@ -365,6 +384,43 @@ class TikTokProvider:
         items = await self._collect_items(workdir)
         if not items:
             raise _ToolFailed("yt-dlp yielded zero items")
+        return items
+
+    async def _run_gallery_dl(self, url: str, workdir: Path) -> list[MediaItem]:
+        # gallery-dl is the TikTok fallback: it occasionally extracts a post
+        # yt-dlp's extractor chokes on. No cookies — public posts only.
+        cmd: list[str] = [
+            "gallery-dl",
+            "--config-ignore",
+            "-D",
+            str(workdir),
+            "--no-part",
+            "--no-skip",
+            "-o",
+            "output.mode=null",
+            "-o",
+            "output.shorten=false",
+            "--write-metadata",
+            "--",
+            url,
+        ]
+
+        timeout = self._effective_timeout()
+        try:
+            res = await self._runner(cmd, cwd=workdir, timeout_s=timeout)
+        except SubprocessTimeoutError as exc:
+            raise _ToolFailed(
+                f"gallery-dl timeout after {timeout}s", transient=True
+            ) from exc
+        if res.returncode != 0:
+            raise _ToolFailed(
+                f"gallery-dl rc={res.returncode}: {redact_text(res.stderr[:_STDERR_PEEK])}",
+                transient=_is_transient_stderr(res.stderr),
+            )
+
+        items = await self._collect_items(workdir)
+        if not items:
+            raise _ToolFailed("gallery-dl yielded zero items")
         return items
 
     async def _collect_items(self, workdir: Path) -> list[MediaItem]:
