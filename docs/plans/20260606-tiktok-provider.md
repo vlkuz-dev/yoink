@@ -249,13 +249,13 @@
 - [x] run tests — must pass before Task 7
 
 ### Task 7: Registry + allowlist integration test
-- [ ] add `tests/integration/test_tiktok_registry.py`: `autodiscover()`
+- [x] add `tests/integration/test_tiktok_registry.py`: `autodiscover()`
       registers the `tiktok` provider; `known_domains` contains all 5 TikTok
       hosts; `registry.find("https://www.tiktok.com/@u/video/1")` returns the
       TikTok provider and `find` for a short link returns it too
-- [ ] write test: a TikTok host passes `validate_url` when present in the
+- [x] write test: a TikTok host passes `validate_url` when present in the
       allowlist derived from `known_domains`
-- [ ] run full unit + integration suite — must pass before Task 8
+- [x] run full unit + integration suite — must pass before Task 8
 
 ### Task 8: Verify acceptance criteria
 - [ ] verify all Overview requirements implemented (video + slideshow, yt-dlp
