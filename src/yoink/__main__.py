@@ -15,6 +15,7 @@ from yoink.core.registry import ProviderRegistry
 from yoink.log import configure_logging, get_logger
 from yoink.providers.cookie_health import CookieHealth
 from yoink.providers.instagram import provider as instagram_provider
+from yoink.providers.tiktok import provider as tiktok_provider
 from yoink.uploader.telegram import TelegramUploader
 
 
@@ -38,6 +39,10 @@ async def _run() -> int:
         max_file_bytes=settings.max_file_mb * 1024 * 1024,
         download_timeout_s=float(settings.download_timeout_s),
         cookie_health=cookie_health,
+    )
+    tiktok_provider.configure(
+        max_file_bytes=settings.max_file_mb * 1024 * 1024,
+        download_timeout_s=float(settings.download_timeout_s),
     )
     registry = ProviderRegistry.autodiscover()
     rate_limiter = TokenBucketLimiter(rate_per_min=settings.rate_per_chat_per_min)

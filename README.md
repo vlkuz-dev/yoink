@@ -1,8 +1,15 @@
 # yoink
 
 Telegram bot that detects media URLs in chat messages, downloads the media
-from the source platform, and re-uploads it inline. Instagram is the MVP
-provider; additional platforms drop in as single-file modules.
+from the source platform, and re-uploads it inline. Instagram and TikTok are
+supported out of the box; additional platforms drop in as single-file modules.
+
+## Supported platforms
+
+| Platform | Media | Notes |
+|---|---|---|
+| Instagram | posts, reels, stories, carousels | private/age-gated needs a cookie file (`YOINK_IG_COOKIES_FILE`) |
+| TikTok | videos, photo slideshows | public posts only — no cookies. Handles `vm.`/`vt.` short links. |
 
 ## Quick start (dev)
 
@@ -105,7 +112,7 @@ The registry auto-discovers any module in that package at startup. No
 core changes required.
 
 ```python
-# src/yoink/providers/tiktok.py
+# src/yoink/providers/example.py
 from __future__ import annotations
 
 import re
@@ -114,9 +121,9 @@ from pathlib import Path
 from yoink.core.models import MediaPackage
 
 
-class TikTokProvider:
-    name = "tiktok"
-    domains = frozenset({"tiktok.com", "www.tiktok.com", "vm.tiktok.com"})
+class ExampleProvider:
+    name = "example"
+    domains = frozenset({"example.com", "www.example.com"})
     _RE = re.compile(r"/video/\d+", re.I)
 
     def can_handle(self, url: str) -> bool:
@@ -127,11 +134,13 @@ class TikTokProvider:
         ...
 
 
-provider = TikTokProvider()
+provider = ExampleProvider()
 ```
 
-Drop a test under `tests/unit/test_tiktok_provider.py` mocking
-`run_subprocess`. The pipeline picks it up on next restart.
+Drop a test under `tests/unit/test_example_provider.py` mocking
+`run_subprocess`. The pipeline picks it up on next restart. The shipped
+`instagram.py` and `tiktok.py` modules are fuller reference implementations
+(size caps, sidecar parsing, primary/fallback tool order).
 
 ## Risks & known gaps
 
@@ -147,7 +156,11 @@ Drop a test under `tests/unit/test_tiktok_provider.py` mocking
   Permanent errors (404, geo-block) are not retried.
 - **Extractor drift.** `gallery-dl` and `yt-dlp` track moving targets.
   Pin versions in the Dockerfile and rebuild regularly; structured logs
-  surface tool versions on failure.
+  surface tool versions on failure. TikTok extractors break especially
+  often upstream — a stale `yt-dlp` is the most likely TikTok failure mode.
+- **TikTok region locks.** No cookies are used, so private or
+  region-locked TikTok posts fail with a clean `ProviderError` (logged and
+  skipped, not a crash). Only public posts are downloadable.
 - **SSRF via redirects.** The initial URL is validated for scheme,
   userinfo, port, literal-IP private ranges, and (optionally) an
   allowlist before queueing. Redirects inside `gallery-dl` / `yt-dlp`
