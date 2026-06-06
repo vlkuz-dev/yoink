@@ -158,21 +158,21 @@
 ## Implementation Steps
 
 ### Task 1: Scaffold provider module + URL matching (`can_handle`)
-- [ ] create `src/yoink/providers/tiktok.py` with `TikTokProvider` class:
+- [x] create `src/yoink/providers/tiktok.py` with `TikTokProvider` class:
       `name = "tiktok"`, `domains = frozenset({"tiktok.com","www.tiktok.com",
       "m.tiktok.com","vm.tiktok.com","vt.tiktok.com"})`, and a module-level
       `provider = TikTokProvider()` export
-- [ ] implement `can_handle(url)`: `urlsplit` (guard `ValueError`), normalize
+- [x] implement `can_handle(url)`: `urlsplit` (guard `ValueError`), normalize
       host (lowercase, strip leading `www.`), accept short-link hosts
       (`vm.tiktok.com`/`vt.tiktok.com`) by host alone; for
       `tiktok.com`/`m.tiktok.com` require path regex
       `^/(@[^/]+/(video|photo)/\d+|t/|v/\d+)`; reject all other hosts/paths
-- [ ] write tests: `can_handle` ACCEPT — `/@user/video/<id>`,
+- [x] write tests: `can_handle` ACCEPT — `/@user/video/<id>`,
       `/@user/photo/<id>`, `vm.tiktok.com/<tok>/`, `vt.tiktok.com/<tok>/`,
       `www.tiktok.com/t/<tok>/`, with/without `www.`, `m.tiktok.com`
-- [ ] write tests: `can_handle` REJECT — bare `/@user`, `/tag/x`,
+- [x] write tests: `can_handle` REJECT — bare `/@user`, `/tag/x`,
       `/discover/x`, `/foryou`, instagram.com URL, malformed URL
-- [ ] run `pytest -q tests/unit/test_tiktok_provider.py` — must pass before Task 2
+- [x] run `pytest -q tests/unit/test_tiktok_provider.py` — must pass before Task 2
 
 ### Task 2: yt-dlp command builder (primary tool) + security flags
 - [ ] implement `_run_yt_dlp(url, workdir)`: build argv `["yt-dlp",
