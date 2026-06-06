@@ -479,6 +479,27 @@ class TikTokProvider:
         if size > limit:
             raise MediaTooLarge.from_size(path, size, limit)
 
+    def configure(
+        self,
+        *,
+        max_file_bytes: int | None = None,
+        download_timeout_s: float | None = None,
+    ) -> None:
+        """Apply runtime settings to the autodiscovered singleton.
+
+        Called from `__main__` after autodiscover so values loaded from
+        `.env` via pydantic-settings reach the provider — the singleton
+        is constructed at import time before Settings exists, and
+        pydantic-settings does not export `.env` into `os.environ`.
+
+        TikTok needs no cookies (public posts only), so there is no
+        `cookies_file` / `cookie_health` analogue here.
+        """
+        if max_file_bytes is not None:
+            self._max_file_bytes = max_file_bytes
+        if download_timeout_s is not None:
+            self._download_timeout_s = download_timeout_s
+
     @staticmethod
     def _purge_workdir(workdir: Path) -> None:
         # Remove stale artifacts from a prior failed attempt so a retry does

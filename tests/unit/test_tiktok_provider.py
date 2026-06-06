@@ -23,6 +23,7 @@ class _Recorder:
     ) -> None:
         self._scripts = list(scripts)
         self.calls: list[list[str]] = []
+        self.timeouts: list[float] = []
         self._side_effect = side_effect
 
     async def __call__(
@@ -35,6 +36,7 @@ class _Recorder:
         stderr_cap_bytes: int = 64 * 1024,
     ) -> SubprocessResult:
         self.calls.append(list(cmd))
+        self.timeouts.append(timeout_s)
         if self._side_effect is not None:
             self._side_effect(cmd, cwd)
         if not self._scripts:
@@ -654,3 +656,114 @@ async def test_fetch_primary_permanent_then_transient_is_transient(
 
     with pytest.raises(ProviderTransientError):
         await p.fetch(url, tmp_path)
+
+
+# --- Task 6: configure() + env-var fallback ---
+
+
+def test_configure_applies_max_bytes_and_timeout() -> None:
+    p = TikTokProvider(probe_video_dims=False)
+    # Defaults before configure: no max-bytes limit, default timeout.
+    assert p._effective_max_bytes() is None
+    assert p._effective_timeout() == 90.0
+
+    p.configure(max_file_bytes=42 * 1024 * 1024, download_timeout_s=120.0)
+
+    assert p._effective_max_bytes() == 42 * 1024 * 1024
+    assert p._effective_timeout() == 120.0
+
+
+def test_configure_no_cookies_signature() -> None:
+    # TikTok needs no cookies — configure must reject cookie kwargs.
+    p = TikTokProvider(probe_video_dims=False)
+    with pytest.raises(TypeError):
+        p.configure(cookies_file=Path("/tmp/c.txt"))  # type: ignore[call-arg]
+
+
+def test_configure_partial_leaves_other_value_untouched() -> None:
+    p = TikTokProvider(
+        probe_video_dims=False, max_file_bytes=999, download_timeout_s=10.0
+    )
+    # Only update timeout; max_file_bytes must be preserved.
+    p.configure(download_timeout_s=55.0)
+    assert p._effective_timeout() == 55.0
+    assert p._effective_max_bytes() == 999
+
+    # None args are no-ops (do not clobber configured values).
+    p.configure(max_file_bytes=None, download_timeout_s=None)
+    assert p._effective_timeout() == 55.0
+    assert p._effective_max_bytes() == 999
+
+
+def test_timeout_env_var_fallback_when_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("YOINK_DOWNLOAD_TIMEOUT_S", "45")
+    p = TikTokProvider(probe_video_dims=False)  # no explicit timeout
+    assert p._effective_timeout() == 45.0
+
+
+def test_timeout_env_var_invalid_falls_through_to_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("YOINK_DOWNLOAD_TIMEOUT_S", "not-a-number")
+    p = TikTokProvider(probe_video_dims=False)
+    assert p._effective_timeout() == 90.0
+
+
+def test_explicit_timeout_overrides_env_var(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("YOINK_DOWNLOAD_TIMEOUT_S", "45")
+    # ctor value wins over the env var.
+    p = TikTokProvider(probe_video_dims=False, download_timeout_s=200.0)
+    assert p._effective_timeout() == 200.0
+    # configure() value also wins over the env var.
+    p2 = TikTokProvider(probe_video_dims=False)
+    p2.configure(download_timeout_s=300.0)
+    assert p2._effective_timeout() == 300.0
+
+
+def test_explicit_max_bytes_overrides_env_var(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("YOINK_MAX_FILE_MB", "1")
+    p = TikTokProvider(probe_video_dims=False)
+    p.configure(max_file_bytes=7 * 1024 * 1024)
+    # Configured byte count wins over the 1 MiB env fallback.
+    assert p._effective_max_bytes() == 7 * 1024 * 1024
+
+
+@pytest.mark.asyncio
+async def test_configured_timeout_passed_to_runner(tmp_path: Path) -> None:
+    url = "https://www.tiktok.com/@user/video/7123456789"
+    rec = _Recorder(
+        [_result()],
+        side_effect=_yt_dlp_writes(
+            [("7123456789.mp4", {"width": 720, "height": 1280, "duration": 5})],
+        ),
+    )
+    p = TikTokProvider(runner=rec, probe_video_dims=False)
+    p.configure(download_timeout_s=137.0)
+
+    await p.fetch(url, tmp_path)
+
+    # The yt-dlp subprocess must receive the configured timeout.
+    assert rec.timeouts == [137.0]
+
+
+def test_module_singleton_is_configurable() -> None:
+    # The autodiscovered module-level singleton exposes configure (mirrors
+    # how __main__ wires it before ProviderRegistry.autodiscover()).
+    assert hasattr(module_provider, "configure")
+    saved_max = module_provider._max_file_bytes
+    saved_timeout = module_provider._download_timeout_s
+    try:
+        module_provider.configure(
+            max_file_bytes=5 * 1024 * 1024, download_timeout_s=33.0
+        )
+        assert module_provider._effective_max_bytes() == 5 * 1024 * 1024
+        assert module_provider._effective_timeout() == 33.0
+    finally:
+        module_provider._max_file_bytes = saved_max
+        module_provider._download_timeout_s = saved_timeout

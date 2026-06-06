@@ -234,19 +234,19 @@
 - [x] run tests — must pass before Task 6
 
 ### Task 6: `configure()` + `__main__` wiring + env-var fallback
-- [ ] add `configure(*, max_file_bytes=None, download_timeout_s=None)` to
+- [x] add `configure(*, max_file_bytes=None, download_timeout_s=None)` to
       `TikTokProvider` mirroring the Instagram pattern (NO cookies/cookie_health
       params); add `_effective_max_bytes()` / `_effective_timeout()` helpers
       that fall back to `YOINK_MAX_FILE_MB` / `YOINK_DOWNLOAD_TIMEOUT_S`
       env vars then to sane defaults
-- [ ] edit `src/yoink/__main__.py`: import `provider as tiktok_provider`; add
+- [x] edit `src/yoink/__main__.py`: import `provider as tiktok_provider`; add
       `tiktok_provider.configure(max_file_bytes=settings.max_file_mb*1024*1024,
       download_timeout_s=float(settings.download_timeout_s))` immediately
       before `ProviderRegistry.autodiscover()`
-- [ ] write tests: `configure(...)` applies runtime max-bytes/timeout to the
+- [x] write tests: `configure(...)` applies runtime max-bytes/timeout to the
       singleton; env-var fallback for timeout when unset; explicit ctor/config
       value overrides the env var
-- [ ] run tests — must pass before Task 7
+- [x] run tests — must pass before Task 7
 
 ### Task 7: Registry + allowlist integration test
 - [ ] add `tests/integration/test_tiktok_registry.py`: `autodiscover()`
