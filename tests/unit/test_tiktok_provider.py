@@ -680,6 +680,25 @@ def test_configure_no_cookies_signature() -> None:
         p.configure(cookies_file=Path("/tmp/c.txt"))  # type: ignore[call-arg]
 
 
+@pytest.mark.asyncio
+async def test_no_cookie_flags_in_either_tool_argv(tmp_path: Path) -> None:
+    # The behavioral "public posts only" contract: neither extractor argv may
+    # ever carry a cookie flag (the signature guard above only proves the
+    # kwarg is absent, not that the argv stays clean).
+    url = "https://www.tiktok.com/@user/video/123"
+    cookie_flags = ("--cookies", "--cookies-from-browser")
+    for builder in ("_run_yt_dlp", "_run_gallery_dl"):
+        # rc=0 with no files written → _ToolFailed, but argv is recorded first.
+        rec = _Recorder([_result()])
+        p = TikTokProvider(runner=rec)
+        with pytest.raises(_ToolFailed):
+            await getattr(p, builder)(url, tmp_path)
+        cmd = rec.calls[0]
+        assert not any(flag in arg for arg in cmd for flag in cookie_flags), (
+            f"{builder} argv leaked a cookie flag: {cmd}"
+        )
+
+
 def test_configure_partial_leaves_other_value_untouched() -> None:
     p = TikTokProvider(
         probe_video_dims=False, max_file_bytes=999, download_timeout_s=10.0
