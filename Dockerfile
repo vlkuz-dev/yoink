@@ -39,8 +39,13 @@ RUN groupadd --system --gid 1000 yoink && \
 
 COPY --from=builder /wheels /wheels
 
-ARG GALLERY_DL_VERSION=1.27.6
-ARG YT_DLP_VERSION=2024.8.6
+# gallery-dl >=1.28 is required for any TikTok support; the native
+# TiktokPostExtractor (photo/video) and TiktokVmpostExtractor (vt./vm. short
+# links) are what make photo-slideshow posts downloadable. yt-dlp still cannot
+# extract TikTok /photo/ posts at any version, so gallery-dl is the only path
+# for slideshows (the provider already falls back to it).
+ARG GALLERY_DL_VERSION=1.32.2
+ARG YT_DLP_VERSION=2026.3.17
 
 RUN pip install --no-index --find-links=/wheels yoink && \
     pip install "gallery-dl==${GALLERY_DL_VERSION}" "yt-dlp==${YT_DLP_VERSION}" && \
