@@ -7,7 +7,7 @@ import re
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 from yoink.core.errors import (
     MediaTooLarge,
@@ -20,7 +20,12 @@ from yoink.downloader.runner import (
     SubprocessTimeoutError,
     run_subprocess,
 )
-from yoink.downloader.safety import redact_text, redact_url
+from yoink.downloader.safety import (
+    UnsafeURLError,
+    redact_text,
+    redact_url,
+    validate_url,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
@@ -50,9 +55,18 @@ class _Runner(Protocol):
 class _ToolFailed(Exception):  # noqa: N818  # internal sentinel, not surfaced
     """Internal: one extractor exhausted its options; try the next."""
 
-    def __init__(self, message: str, *, transient: bool = False) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        transient: bool = False,
+        resolved_url: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.transient = transient
+        # Canonical post URL the extractor resolved a short link to before
+        # failing (see `_canonical_url_from_stderr`); fed to the fallback tool.
+        self.resolved_url = resolved_url
 
 
 # Short-link hosts whose path is an opaque redirect token, NOT `/video/` or
@@ -109,6 +123,41 @@ _TRANSIENT_STDERR_MARKERS: tuple[str, ...] = (
 def _is_transient_stderr(stderr: str) -> bool:
     text = stderr.lower()
     return any(marker in text for marker in _TRANSIENT_STDERR_MARKERS)
+
+
+# yt-dlp follows `vt.`/`vm.tiktok.com` redirects internally, then — for the
+# photo-slideshow posts its extractor cannot handle — aborts with
+# `ERROR: Unsupported URL: https://www.tiktok.com/@user/photo/<id>?...`.
+# gallery-dl *can* extract those posts but cannot expand the short link
+# itself, so we harvest yt-dlp's already-resolved URL and hand the canonical
+# form to the gallery-dl fallback. `_ANSI_RE` strips colour codes yt-dlp may
+# wrap the message in so `\S+` doesn't slurp a trailing reset into the URL.
+_ANSI_RE: re.Pattern[str] = re.compile(r"\x1b\[[0-9;]*m")
+_UNSUPPORTED_URL_RE: re.Pattern[str] = re.compile(
+    r"Unsupported URL:\s*(https?://\S+)",
+    re.IGNORECASE,
+)
+
+
+def _canonical_url_from_stderr(stderr: str) -> str | None:
+    """Recover the canonical post URL yt-dlp resolved a short link to.
+
+    Returns the query/fragment/userinfo-stripped `scheme://host/path` form so
+    the gallery-dl fallback gets a stable URL it understands, or None when no
+    resolved URL is present (e.g. network/rate-limit failures). The caller is
+    responsible for re-validating the result with `validate_url`.
+    """
+    match = _UNSUPPORTED_URL_RE.search(_ANSI_RE.sub("", stderr))
+    if match is None:
+        return None
+    try:
+        parts = urlsplit(match.group(1))
+    except ValueError:
+        return None
+    if not parts.scheme or not parts.hostname:
+        return None
+    # hostname-only netloc drops any port/userinfo as a side effect.
+    return urlunsplit((parts.scheme, parts.hostname, parts.path, "", ""))
 
 
 # Extension → kind mapping. TikTok yields `.mp4` videos and `.jpg`/`.webp`
@@ -308,19 +357,24 @@ class TikTokProvider:
         # extractor and resolves short links cleanly).
         primary_err: str | None = None
         primary_transient = False
+        primary_resolved: str | None = None
         items: list[MediaItem] = []
         try:
             items = await self._run_yt_dlp(url, workdir)
         except _ToolFailed as exc:
             primary_err = str(exc)
             primary_transient = exc.transient
+            primary_resolved = exc.resolved_url
 
         if not items:
             # Purge yt-dlp partials so gallery-dl's _collect_items doesn't
             # pick up truncated/half-written files as successful artifacts.
             self._purge_workdir(workdir)
+            # gallery-dl cannot expand `vt.`/`vm.` short links; if yt-dlp
+            # already resolved one, hand gallery-dl the canonical post URL.
+            fallback_url = self._gallery_dl_url(url, primary_resolved)
             try:
-                items = await self._run_gallery_dl(url, workdir)
+                items = await self._run_gallery_dl(fallback_url, workdir)
             except _ToolFailed as exc:
                 # If either extractor failed transiently, the combined fetch
                 # is retry-eligible: backoff + retry may let the transient
@@ -391,12 +445,29 @@ class TikTokProvider:
             raise _ToolFailed(
                 f"yt-dlp rc={res.returncode}: {redact_text(res.stderr[:_STDERR_PEEK])}",
                 transient=_is_transient_stderr(res.stderr),
+                resolved_url=_canonical_url_from_stderr(res.stderr),
             )
 
         items = await self._collect_items(workdir)
         if not items:
             raise _ToolFailed("yt-dlp yielded zero items")
         return items
+
+    def _gallery_dl_url(self, original: str, resolved: str | None) -> str:
+        """Pick the URL handed to the gallery-dl fallback.
+
+        Prefer the canonical post URL yt-dlp resolved a short link to, but
+        only after re-validating it against the TikTok host allowlist (so a
+        malformed or off-domain string parsed out of stderr can never redirect
+        the fallback fetch). Fall back to the original on absence or rejection.
+        """
+        if resolved is None or resolved == original:
+            return original
+        try:
+            validate_url(resolved, self.domains, resolve_dns=False)
+        except UnsafeURLError:
+            return original
+        return resolved
 
     async def _run_gallery_dl(self, url: str, workdir: Path) -> list[MediaItem]:
         # gallery-dl is the TikTok fallback: it occasionally extracts a post

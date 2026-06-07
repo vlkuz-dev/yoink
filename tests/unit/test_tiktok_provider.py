@@ -664,6 +664,126 @@ async def test_fetch_primary_permanent_then_transient_is_transient(
         await p.fetch(url, tmp_path)
 
 
+# --- Short-link resolution: hand gallery-dl the canonical URL yt-dlp found ---
+
+
+def test_canonical_url_from_stderr_recovers_resolved_photo_url() -> None:
+    from yoink.providers.tiktok import _canonical_url_from_stderr
+
+    stderr = (
+        "ERROR: Unsupported URL: "
+        "https://www.tiktok.com/@pobedinskaya_7/photo/7627978299762904342"
+        "?lang=en&u_code=abc\n"
+    )
+    # Query/fragment are stripped to the stable canonical post URL.
+    assert (
+        _canonical_url_from_stderr(stderr)
+        == "https://www.tiktok.com/@pobedinskaya_7/photo/7627978299762904342"
+    )
+
+
+def test_canonical_url_from_stderr_strips_ansi() -> None:
+    from yoink.providers.tiktok import _canonical_url_from_stderr
+
+    stderr = (
+        "\x1b[1;31mERROR: Unsupported URL: "
+        "https://www.tiktok.com/@u/photo/123\x1b[0m\n"
+    )
+    assert _canonical_url_from_stderr(stderr) == "https://www.tiktok.com/@u/photo/123"
+
+
+def test_canonical_url_from_stderr_none_without_marker() -> None:
+    from yoink.providers.tiktok import _canonical_url_from_stderr
+
+    assert _canonical_url_from_stderr("HTTP Error 429: Too Many Requests") is None
+    assert _canonical_url_from_stderr("") is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_short_link_photo_resolves_canonical_for_gallery_dl(
+    tmp_path: Path,
+) -> None:
+    """yt-dlp resolves a `vt.` short link to a photo post it cannot extract;
+    the canonical URL it logged is what the gallery-dl fallback receives."""
+    short = "https://vt.tiktok.com/ZSQjd6ay2/"
+    canonical = "https://www.tiktok.com/@pobedinskaya_7/photo/7627978299762904342"
+    rec = _Recorder(
+        [
+            _result(
+                returncode=1,
+                stderr=f"ERROR: Unsupported URL: {canonical}?lang=en\n",
+            ),
+            _result(),  # gallery-dl succeeds on the canonical URL
+        ],
+        side_effect=_tool_writes(
+            {
+                "gallery-dl": [
+                    (f"7627978299762904342_{i}.jpg", {"width": 1080, "height": 1350})
+                    for i in range(1, 4)
+                ],
+            },
+        ),
+    )
+    p = TikTokProvider(runner=rec, probe_video_dims=False)
+
+    pkg = await p.fetch(short, tmp_path)
+
+    names = [it.path.name for it in pkg.items]
+    assert names == [f"7627978299762904342_{i}.jpg" for i in range(1, 4)]
+    # yt-dlp got the short link; gallery-dl got the resolved canonical URL.
+    assert rec.calls[0][-1] == short
+    assert rec.calls[1][-1] == canonical
+    # The package still reports the URL the user actually sent.
+    assert pkg.source_url == short
+
+
+@pytest.mark.asyncio
+async def test_fetch_fallback_keeps_original_url_without_resolved(
+    tmp_path: Path,
+) -> None:
+    """A generic yt-dlp failure (no resolved URL in stderr) → gallery-dl is
+    invoked with the original URL, unchanged."""
+    url = "https://www.tiktok.com/@user/video/7123456789"
+    rec = _Recorder(
+        [
+            _result(returncode=1, stderr="some unrecognized yt-dlp error"),
+            _result(),
+        ],
+        side_effect=_tool_writes(
+            {"gallery-dl": [("7123456789.jpg", {"width": 1080, "height": 1080})]},
+        ),
+    )
+    p = TikTokProvider(runner=rec, probe_video_dims=False)
+
+    await p.fetch(url, tmp_path)
+
+    assert rec.calls[1][-1] == url
+
+
+@pytest.mark.asyncio
+async def test_fetch_rejects_offdomain_resolved_url(tmp_path: Path) -> None:
+    """A resolved URL outside the TikTok host allowlist is ignored; the
+    fallback uses the original URL (defends against a poisoned stderr)."""
+    url = "https://vt.tiktok.com/ZSQjd6ay2/"
+    rec = _Recorder(
+        [
+            _result(
+                returncode=1,
+                stderr="ERROR: Unsupported URL: https://evil.example.com/x\n",
+            ),
+            _result(),
+        ],
+        side_effect=_tool_writes(
+            {"gallery-dl": [("x.jpg", {"width": 10, "height": 10})]},
+        ),
+    )
+    p = TikTokProvider(runner=rec, probe_video_dims=False)
+
+    await p.fetch(url, tmp_path)
+
+    assert rec.calls[1][-1] == url
+
+
 # --- Task 6: configure() + env-var fallback ---
 
 
