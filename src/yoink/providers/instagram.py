@@ -508,34 +508,52 @@ class InstagramProvider:
             "--no-warnings",
             "--write-info-json",
         ]
+        # yt-dlp rewrites the cookie jar on exit and treats a write failure as
+        # fatal (non-zero exit) even after the media downloaded fine. Our
+        # cookies file is a read-only secret mount, so give yt-dlp a writable
+        # throwaway copy (a dotfile `_collect_items` ignores) and delete it
+        # afterwards. gallery-dl only warns on the same write, so it keeps the
+        # original path.
         cookies = self._effective_cookies()
+        tmp_cookies: Path | None = None
         if cookies is not None:
-            cmd.extend(["--cookies", str(cookies)])
+            tmp_cookies = workdir / ".ytdlp-cookies.txt"
+            try:
+                shutil.copyfile(cookies, tmp_cookies)
+            except OSError:
+                tmp_cookies = None
+            handed = tmp_cookies if tmp_cookies is not None else cookies
+            cmd.extend(["--cookies", str(handed)])
         cmd.extend(["--", url])
 
         timeout = self._effective_timeout()
         try:
-            res = await self._runner(cmd, cwd=workdir, timeout_s=timeout)
-        except SubprocessTimeoutError as exc:
-            raise _ToolFailed(
-                f"yt-dlp timeout after {timeout}s", transient=True
-            ) from exc
-        if res.returncode != 0:
-            cookie_reason = _is_cookie_dead_stderr(res.stderr)
-            if cookie_reason is not None:
+            try:
+                res = await self._runner(cmd, cwd=workdir, timeout_s=timeout)
+            except SubprocessTimeoutError as exc:
                 raise _ToolFailed(
-                    f"yt-dlp rc={res.returncode}: cookies_dead={cookie_reason}",
-                    cookies_dead=cookie_reason,
+                    f"yt-dlp timeout after {timeout}s", transient=True
+                ) from exc
+            if res.returncode != 0:
+                cookie_reason = _is_cookie_dead_stderr(res.stderr)
+                if cookie_reason is not None:
+                    raise _ToolFailed(
+                        f"yt-dlp rc={res.returncode}: cookies_dead={cookie_reason}",
+                        cookies_dead=cookie_reason,
+                    )
+                raise _ToolFailed(
+                    f"yt-dlp rc={res.returncode}: {redact_text(res.stderr[:_STDERR_PEEK])}",
+                    transient=_is_transient_stderr(res.stderr),
                 )
-            raise _ToolFailed(
-                f"yt-dlp rc={res.returncode}: {redact_text(res.stderr[:_STDERR_PEEK])}",
-                transient=_is_transient_stderr(res.stderr),
-            )
 
-        items = await self._collect_items(workdir)
-        if not items:
-            raise _ToolFailed("yt-dlp yielded zero items")
-        return items
+            items = await self._collect_items(workdir)
+            if not items:
+                raise _ToolFailed("yt-dlp yielded zero items")
+            return items
+        finally:
+            if tmp_cookies is not None:
+                with contextlib.suppress(OSError):
+                    tmp_cookies.unlink()
 
     async def _collect_items(self, workdir: Path) -> list[MediaItem]:
         media_paths: list[Path] = []
