@@ -88,6 +88,17 @@ _PHOTO_MIME: dict[str, str] = {
 }
 _ANIM_MIME: dict[str, str] = {"gif": "image/gif"}
 
+# Video codecs Telegram cannot inline-preview: the client shows only a static
+# poster frame, so the user perceives a reel as "just a photo". gallery-dl 1.32
+# prefers Instagram's VP9/AV1 DASH variants for many reels (1.27 served the
+# progressive H.264 mp4), so `fetch` detects these and re-fetches via yt-dlp
+# pinned to H.264. Mirrors the TikTok provider's H.264-only rationale. ffprobe
+# reports `codec_name` (h264/vp9/hevc/av1); the tag-style spellings are listed
+# defensively in case a future probe surfaces them.
+_TELEGRAM_UNPLAYABLE_VCODECS: frozenset[str] = frozenset(
+    {"vp8", "vp9", "vp09", "hevc", "h265", "hev1", "hvc1", "av1", "av01"},
+)
+
 _IG_HOSTS: frozenset[str] = frozenset({"instagram.com", "instagr.am"})
 _IG_PATH_RE: re.Pattern[str] = re.compile(r"^/(p|reel|tv|stories)/", re.IGNORECASE)
 _TRAILING_NUM_RE: re.Pattern[str] = re.compile(r"_(\d+)$")
@@ -270,6 +281,52 @@ async def _ffprobe_dims(
     return out
 
 
+async def _ffprobe_vcodec(
+    path: Path,
+    *,
+    runner: _Runner,
+    timeout_s: float = 10.0,
+) -> str | None:
+    """Return the first video stream's `codec_name` (e.g. "h264", "vp9"), or None.
+
+    None on a missing ffprobe binary, timeout, non-zero exit, or unparseable
+    output — callers treat "unknown codec" as "playable" (no re-fetch), so a
+    probe failure never turns a working gallery-dl result into a yt-dlp retry.
+    """
+    if shutil.which("ffprobe") is None:
+        return None
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=codec_name",
+        "-of",
+        "json",
+        str(path),
+    ]
+    try:
+        res = await runner(cmd, cwd=path.parent, timeout_s=timeout_s)
+    except SubprocessTimeoutError:
+        return None
+    if res.returncode != 0:
+        return None
+    try:
+        parsed = json.loads(res.stdout.decode("utf-8", errors="replace") or "{}")
+    except json.JSONDecodeError:
+        return None
+    streams = parsed.get("streams") if isinstance(parsed, dict) else None
+    if not isinstance(streams, list) or not streams:
+        return None
+    first = streams[0]
+    if not isinstance(first, dict):
+        return None
+    name = first.get("codec_name")
+    return name if isinstance(name, str) else None
+
+
 class InstagramProvider:
     name: str = "instagram"
     domains: frozenset[str] = frozenset(
@@ -330,6 +387,16 @@ class InstagramProvider:
                 ) from exc
             primary_err = str(exc)
             primary_transient = exc.transient
+
+        # gallery-dl 1.32 grabs Instagram's VP9/AV1 DASH variant for many
+        # reels; Telegram renders non-H.264 video as a static poster frame
+        # (the reel looks like a photo). Discard such a single-video result so
+        # the yt-dlp fallback below re-fetches it pinned to H.264. Restricted
+        # to the single-video case — multi-item carousels are gallery-dl's
+        # strength and yt-dlp handles them worse, so they are left untouched.
+        if items and self._probe_video_dims and await self._needs_h264_refetch(items):
+            primary_err = "gallery-dl video codec not Telegram-streamable; preferred yt-dlp H.264"
+            items = []
 
         if not items:
             # Purge gallery-dl partials so yt-dlp's _collect_items doesn't
@@ -426,6 +493,15 @@ class InstagramProvider:
         cmd: list[str] = [
             "yt-dlp",
             "--ignore-config",
+            # Pin H.264: Instagram's high-quality DASH variants are VP9/AV1,
+            # which Telegram cannot inline-preview (renders a static poster
+            # frame). Prefer any AVC/H.264 stream — Instagram's progressive
+            # formats are H.264 — then fall back to best. Remux into mp4 so
+            # the container is always Telegram-friendly. Mirrors tiktok.py.
+            "-f",
+            "best[vcodec^=avc]/best[vcodec^=h264]/best",
+            "--remux-video",
+            "mp4",
             "-o",
             f"{workdir}/%(id)s.%(ext)s",
             "--no-progress",
@@ -508,6 +584,19 @@ class InstagramProvider:
                 ),
             )
         return items
+
+    async def _needs_h264_refetch(self, items: list[MediaItem]) -> bool:
+        """True when gallery-dl returned a single video Telegram can't preview.
+
+        Probes the lone video's codec; returns True only for VP9/HEVC/AV1 (the
+        codecs Telegram renders as a static frame). An unprobeable or H.264
+        video returns False, so a working result is never discarded. Multi-item
+        results return False without probing — see the caller's rationale.
+        """
+        if len(items) != 1 or items[0].kind != "video":
+            return False
+        codec = await _ffprobe_vcodec(items[0].path, runner=self._runner)
+        return codec is not None and codec.lower() in _TELEGRAM_UNPLAYABLE_VCODECS
 
     def _enforce_size(self, path: Path) -> None:
         limit = self._effective_max_bytes()

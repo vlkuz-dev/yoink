@@ -76,6 +76,11 @@ def _write_sidecar(media_path: Path, meta: dict[str, object]) -> None:
     sidecar.write_text(json.dumps(meta), encoding="utf-8")
 
 
+def _ffprobe_codec_stdout(codec: str) -> bytes:
+    """Synthesise the ffprobe `-show_entries stream=codec_name -of json` output."""
+    return json.dumps({"streams": [{"codec_name": codec}]}).encode("utf-8")
+
+
 @pytest.mark.asyncio
 async def test_fetch_purges_leftover_artifacts_before_run(tmp_path: Path) -> None:
     """Stale files from a prior failed attempt must not be picked up on retry."""
@@ -378,6 +383,127 @@ async def test_yt_dlp_uses_security_flags(tmp_path: Path) -> None:
     assert "--ignore-config" in yt_cmd
     assert yt_cmd[-2] == "--"
     assert yt_cmd[-1] == url
+
+
+async def test_yt_dlp_pins_h264_format(tmp_path: Path) -> None:
+    """The yt-dlp fallback must request an H.264 stream and remux into mp4.
+
+    Telegram renders VP9/AV1 video as a static poster frame, so the fallback
+    has to pin H.264 rather than accept Instagram's default DASH variant.
+    """
+    def side(cmd: list[str], cwd: Path) -> None:
+        if cmd[0] == "yt-dlp":
+            _make_file(tmp_path / "v.mp4")
+
+    rec = _Recorder(
+        [
+            _result(returncode=1, stderr="some error"),
+            _result(),
+        ],
+        side_effect=side,
+    )
+    p = InstagramProvider(runner=rec, probe_video_dims=False)
+    await p.fetch("https://www.instagram.com/reel/FMT/", tmp_path)
+
+    yt_cmd = rec.calls[1]
+    assert yt_cmd[yt_cmd.index("-f") + 1] == "best[vcodec^=avc]/best[vcodec^=h264]/best"
+    assert yt_cmd[yt_cmd.index("--remux-video") + 1] == "mp4"
+
+
+async def test_gallery_dl_vp9_video_refetched_via_yt_dlp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A VP9 reel from gallery-dl is discarded and re-fetched as H.264 via yt-dlp."""
+    monkeypatch.setattr(
+        "yoink.providers.instagram.shutil.which", lambda _name: "/usr/bin/ffprobe"
+    )
+
+    def side(cmd: list[str], cwd: Path) -> None:
+        if cmd[0] == "gallery-dl":
+            f = tmp_path / "vp9reel.mp4"
+            _make_file(f)
+            _write_sidecar(f, {"width": 1080, "height": 1920, "duration": 8})
+        elif cmd[0] == "yt-dlp":
+            f = tmp_path / "h264reel.mp4"
+            _make_file(f)
+            (tmp_path / "h264reel.info.json").write_text(
+                json.dumps({"width": 720, "height": 1280, "duration": 8}),
+                encoding="utf-8",
+            )
+
+    rec = _Recorder(
+        [
+            _result(),  # gallery-dl rc=0 → writes the VP9 mp4
+            _result(stdout=_ffprobe_codec_stdout("vp9")),  # codec gate probe
+            _result(),  # yt-dlp rc=0 → writes the H.264 mp4
+        ],
+        side_effect=side,
+    )
+    p = InstagramProvider(runner=rec, probe_video_dims=True)
+    pkg = await p.fetch("https://www.instagram.com/reel/VP9/", tmp_path)
+
+    assert [c[0] for c in rec.calls] == ["gallery-dl", "ffprobe", "yt-dlp"]
+    assert len(pkg.items) == 1
+    assert pkg.items[0].kind == "video"
+    assert pkg.items[0].path.name == "h264reel.mp4"
+    # gallery-dl's VP9 artifact was purged before yt-dlp ran.
+    assert not (tmp_path / "vp9reel.mp4").exists()
+
+
+async def test_gallery_dl_h264_video_kept_no_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An H.264 reel from gallery-dl is kept as-is — no yt-dlp re-fetch."""
+    monkeypatch.setattr(
+        "yoink.providers.instagram.shutil.which", lambda _name: "/usr/bin/ffprobe"
+    )
+
+    def side(cmd: list[str], cwd: Path) -> None:
+        if cmd[0] == "gallery-dl":
+            f = tmp_path / "good.mp4"
+            _make_file(f)
+            _write_sidecar(f, {"width": 720, "height": 1280, "duration": 8})
+
+    rec = _Recorder(
+        [
+            _result(),  # gallery-dl rc=0
+            _result(stdout=_ffprobe_codec_stdout("h264")),  # codec gate probe
+        ],
+        side_effect=side,
+    )
+    p = InstagramProvider(runner=rec, probe_video_dims=True)
+    pkg = await p.fetch("https://www.instagram.com/reel/H264/", tmp_path)
+
+    assert [c[0] for c in rec.calls] == ["gallery-dl", "ffprobe"]
+    assert len(pkg.items) == 1
+    assert pkg.items[0].path.name == "good.mp4"
+
+
+async def test_multi_item_result_not_gated(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A multi-item carousel is never re-routed to yt-dlp (codec gate skipped)."""
+    monkeypatch.setattr(
+        "yoink.providers.instagram.shutil.which", lambda _name: "/usr/bin/ffprobe"
+    )
+
+    def side(cmd: list[str], cwd: Path) -> None:
+        if cmd[0] == "gallery-dl":
+            for i in (1, 2):
+                f = tmp_path / f"c_{i}.jpg"
+                _make_file(f)
+                _write_sidecar(f, {"width": 1080, "height": 1080})
+
+    rec = _Recorder([_result()], side_effect=side)
+    p = InstagramProvider(runner=rec, probe_video_dims=True)
+    pkg = await p.fetch("https://www.instagram.com/p/MULTI/", tmp_path)
+
+    # No codec probe (len != 1) and no fallback — gallery-dl's result stands.
+    assert [c[0] for c in rec.calls] == ["gallery-dl"]
+    assert len(pkg.items) == 2
 
 
 async def test_skips_json_sidecars_and_dotfiles(tmp_path: Path) -> None:
