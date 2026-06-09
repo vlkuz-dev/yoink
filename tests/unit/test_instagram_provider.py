@@ -410,6 +410,41 @@ async def test_yt_dlp_pins_h264_format(tmp_path: Path) -> None:
     assert yt_cmd[yt_cmd.index("--remux-video") + 1] == "mp4"
 
 
+async def test_yt_dlp_uses_writable_cookies_copy(tmp_path: Path) -> None:
+    """yt-dlp gets a writable throwaway copy of the read-only cookies secret.
+
+    yt-dlp rewrites the cookie jar on exit; pointing it at the read-only mount
+    makes a successful download exit non-zero. The copy is created before the
+    run and removed afterwards.
+    """
+    workdir = tmp_path / "wd"  # cookies live outside workdir so purge can't eat them
+    cookies = tmp_path / "cookies.txt"
+    cookies.write_text("COOKIEDATA", encoding="utf-8")
+    seen: dict[str, object] = {}
+
+    def side(cmd: list[str], cwd: Path) -> None:
+        if cmd[0] == "yt-dlp":
+            passed = Path(cmd[cmd.index("--cookies") + 1])
+            seen["is_copy"] = passed != cookies
+            seen["content"] = passed.read_text(encoding="utf-8")
+            _make_file(workdir / "v.mp4")
+
+    rec = _Recorder(
+        [
+            _result(returncode=1, stderr="some error"),  # gallery-dl → fallback
+            _result(),
+        ],
+        side_effect=side,
+    )
+    p = InstagramProvider(runner=rec, probe_video_dims=False, cookies_file=cookies)
+    await p.fetch("https://www.instagram.com/reel/CK/", workdir)
+
+    assert seen["is_copy"] is True
+    assert seen["content"] == "COOKIEDATA"
+    # The throwaway copy is cleaned up after the run.
+    assert not (workdir / ".ytdlp-cookies.txt").exists()
+
+
 async def test_gallery_dl_vp9_video_refetched_via_yt_dlp(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
